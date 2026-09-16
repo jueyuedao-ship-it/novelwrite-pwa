@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>文机 — Web小説の執筆と管理</title>
+    <meta name="theme-color" content="#283c3b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="文机">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icons/icon-192.png" sizes="192x192">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#main"><span class="brand-mark" aria-hidden="true">文</span><span>文机<small>FUMIZUKUE · NOVEL DESK</small></span></a>
+    <div class="file-actions">
+      <span class="local-badge"><i></i> 端末内で編集</span>
+      <button id="import-button">JSON取り込み</button>
+      <button id="export-json" class="primary">JSON書き出し <span aria-hidden="true">↗</span></button>
+      <button id="reset" class="quiet">新規作品</button>
+    </div>
+    <input id="import-file" type="file" accept=".json,application/json" hidden>
+  </header>
+  <div class="workspace">
+    <aside class="sidebar" aria-label="作品と話の管理">
+      <div class="eyebrow">YOUR MANUSCRIPT</div>
+      <label class="field-label" for="work-title">作品名</label>
+      <input id="work-title" class="work-title" maxlength="300" aria-label="作品名">
+      <div class="sidebar-heading"><h2>話の一覧</h2><button id="add-chapter" class="icon-button" aria-label="話を追加">＋</button></div>
+      <nav id="chapters" aria-label="話を選択"></nav>
+      <div class="chapter-actions"><button id="chapter-up" aria-label="話を上へ移動">↑ 上へ</button><button id="chapter-down" aria-label="話を下へ移動">↓ 下へ</button><button id="delete-chapter" class="danger">削除</button></div>
+      <button id="show-characters" class="characters-shortcut">キャラクター設定 <span id="character-count" class="count-badge">0</span></button>
+      <div class="sidebar-note"><span class="eyebrow">A PLACE FOR YOUR STORY</span><p>文章と、その向こうの情景を。<br>ひとつの机で、少しずつ。</p></div>
+      <button id="load-sample" class="sample-button">サンプル作品を開く <span aria-hidden="true">→</span></button>
+      <details class="help"><summary>使い方・保存について</summary><p>本文は上の全文欄からも、下の行ごとの欄からも編集できます。行番号の横で範囲を指定してシーン説明を追加します。</p><p>JSON書き出しで作品全体を保存します。自動復元は補助機能です。ダウンロード先にファイルがあることを確認してください。</p><p>Ctrl / ⌘ + Z：元に戻す<br>Ctrl / ⌘ + Shift + Z：やり直す<br>Ctrl / ⌘ + S：JSON書き出し</p></details>
+    </aside>
+    <main id="main">
+      <div class="chapter-header"><div><div class="eyebrow" id="chapter-position">CHAPTER 01</div><label class="sr-only" for="chapter-title">話タイトル</label><input id="chapter-title" aria-label="話タイトル" maxlength="300"></div><div class="history-actions"><button id="undo" aria-label="元に戻す">↶ <span>元に戻す</span></button><button id="redo" aria-label="やり直す">↷ <span>やり直す</span></button></div></div>
+      <div class="status-strip"><span id="save-status"></span><span id="recovery-status"></span><span id="word-count"></span></div>
+      <section class="panel preview-panel" aria-label="全文プレビューと編集">
+        <div class="panel-heading"><div class="section-title"><span class="section-number">01</span><h2>全文プレビュー <small>ここでも編集できます</small></h2></div><button id="collapse-preview" class="quiet" aria-expanded="true">折りたたむ −</button></div>
+        <div id="preview-body">
+          <div class="preview-tools"><div class="segmented" aria-label="表示方向"><button id="horizontal" class="active" aria-pressed="true">横書き</button><button id="vertical" aria-pressed="false">縦書き</button></div><label class="font-control">文字サイズ <input id="font-size" type="range" min="14" max="28" value="18" aria-label="文字サイズ"><span id="font-size-value">18</span></label><div class="text-export"><label class="sr-only" for="txt-scope">TXTの出力範囲</label><select id="txt-scope"><option value="chapter">現在の話</option><option value="work">作品全体</option></select><button id="export-txt">本文TXT ↓</button></div></div>
+          <div class="paper"><textarea id="preview" aria-label="全文本文" spellcheck="false" placeholder="ここから物語を書き始められます。"></textarea></div>
+          <div class="panel-footnote">本文だけを表示しています。空白・空行はそのまま保存されます。</div>
+        </div>
+      </section>
+      <section class="panel detail-panel" aria-label="詳細エディタ">
+        <div class="panel-heading"><div class="section-title"><span class="section-number">02</span><h2>詳細エディタ <small>言葉に、情景を添える</small></h2></div><label class="column-control">シーン欄の幅 <input id="column-width" type="range" min="25" max="50" value="34" aria-label="シーン欄の幅"></label></div>
+        <div class="detail-toolbar"><span id="selection-label">行を選択してシーン説明を追加</span><button id="add-line">＋ 本文行</button><button id="delete-lines" class="quiet danger">選択行を削除</button><button id="add-scene" class="accent">＋ シーン説明</button><button id="toggle-scenes" aria-expanded="false">シーンを開く</button></div>
+        <div class="detail-columns" id="detail-columns">
+          <div class="lines-pane"><div class="line-headings"><span>人物名</span><span>本文 <small>Enterで行を分割</small></span></div><div id="lines"></div></div>
+          <aside class="scenes-pane" aria-label="シーンメモ一覧"><div class="scene-heading"><span>シーン詳細説明</span><span id="scene-count" class="count-badge">0</span></div><p class="scene-guide">本文の範囲に紐づく、独立したメモ。<br>同じ行に複数の説明を重ねられます。</p><div id="scenes"></div><div id="scene-empty" class="empty-scenes"><span aria-hidden="true">◫</span><strong>まだ、シーン説明はありません</strong><p>本文の開始行・終了行を指定して<br>「＋ シーン説明」を押してください。</p></div></aside>
+        </div>
+      </section>
+      <section id="characters-panel" class="panel characters-panel" aria-label="キャラクター管理">
+        <div class="panel-heading"><div class="section-title"><span class="section-number">03</span><h2>キャラクター <small>全話で共通の登場人物</small></h2></div><div class="character-tools"><button id="add-character" class="accent">＋ キャラクター</button><button id="collapse-characters" class="quiet" aria-expanded="true">折りたたむ −</button></div></div>
+        <div id="characters-body"><p class="character-guide">名前・人物像・参考画像をまとめて登録できます。詳細エリアの「人物名」に新しい名前を入力し、別の欄へ移動するかEnterを押すと、説明が空のキャラクターを自動で追加します（地の文・システム・空欄を除く）。登録した名前は人物名の候補にも追加されます。登録名の変更・削除は、入力済みの人物名を変更しません。</p><div id="characters"></div><p id="characters-empty">詳細エリアの「人物名」に入力するか、「＋ キャラクター」から登場人物を登録しましょう。</p></div>
+      </section>
+      <footer class="page-footer"><span>文机 / あなたの文章は、あなたの端末に。</span><span id="footer-stats"></span></footer>
+    </main>
+  </div>
+  <datalist id="speakers"></datalist>
+  <div id="toast" role="status" aria-live="polite" hidden></div>
+  <dialog id="dialog" aria-labelledby="dialog-title"><h2 id="dialog-title"></h2><p id="dialog-message"></p><div id="dialog-options"></div></dialog>
+  <dialog id="image-dialog" aria-labelledby="image-dialog-title"><div class="image-dialog-header"><h2 id="image-dialog-title">参考画像</h2><button id="close-image">閉じる</button></div><img id="image-preview" alt=""></dialog>
+
+  <script src="./core.js"></script>
+  <script src="./images.js"></script>
+  <script src="./app.js"></script>
+  <script src="./pwa.js"></script>
+</body>
+</html>
