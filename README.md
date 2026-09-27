@@ -1,46 +1,33 @@
-# 文机 PWA 分割版
+# 文机 PWA 配布フォルダ
 
-GitHub Pages などの静的ホスティングへ、そのまま配置できる構成です。
+この内容が `App-PWA/` にビルドされます。GitHub Pages などのHTTPS静的ホスティングでは、`App-PWA/` 内のファイル一式を公開ルートへ配置し、相対パスを保ってください。
 
-## ファイル構成
+## 配布ファイル
 
-- `index.html` — HTML 本体
-- `styles.css` — 元の `<style>` を分離
-- `core.js` — DOM 非依存のデータ/編集ロジック
-- `images.js` — 画像読み込み・検証
-- `app.js` — UI とアプリ本体
-- `pwa.js` — Service Worker 登録
-- `manifest.webmanifest` — PWA マニフェスト
-- `sw.js` — オフラインキャッシュ
-- `icons/` — PWA アイコン
-- `.nojekyll` — GitHub Pages で Jekyll 処理を無効化
+- `index.html`、`styles.css`、`core.js`、`images.js`、`app.js`：共通の `src/` から生成
+- `pwa.js`：`src/pwa.js` から生成し、Service Worker を登録
+- `manifest.webmanifest`、`sw.js`、`icons/`、`.nojekyll`：この `pwa/` フォルダで管理し、ビルド時に配置
+- `sw.js` のキャッシュ名はアプリの内容から生成されます。アプリ更新時に新しいキャッシュを作成し、古い文机用キャッシュを有効化時に削除します。
 
-## GitHub Pages での配置
+GitHub Pagesのプロジェクトサイトのようにリポジトリ名の下へ公開する場合も、CSS・JavaScript・マニフェスト・アイコン・Service Workerは `./` 相対参照のままにします。
 
-> 前提: `github.io` で配信される GitHub Pages を使用します。通常の `github.com/.../blob/...` や `raw.githubusercontent.com/...` のファイル URL は、PWA の公開先としては扱いません。
+## ローカルでのHTTP確認
 
-リポジトリ内で上記ファイルの相対関係を保ったまま公開してください。`.nojekyll` もリポジトリの公開ルートに置きます。
-
-この構成では CSS / JavaScript / manifest / アイコン / Service Worker の参照を `./` で統一しています。そのため、GitHub Pages のプロジェクトサイトのように URL が `/<repository>/` 配下になる場合でも動作します。
-
-`./` を `/` に変更するとドメイン直下を参照してしまい、プロジェクトサイトではファイルが見つからなくなる場合があるため変更しないでください。
-
-## ローカルでの確認
-
-Service Worker は `file://` では動作しません。開発時は HTTP サーバーで配信してください。
+Service Worker は `file://` では動作しません。開発用の元プロジェクトで確認する場合は、そのルートから次を実行し、出力された `http://127.0.0.1:4174/repo/` を開いてください。
 
 ```powershell
-cd fumizukue-pwa
-python -m http.server 8000
+npm.cmd run build
+npm.cmd run serve:pwa
 ```
 
-PC では `http://localhost:8000/` で確認できます。
+このサーバーはGitHub Pagesのプロジェクトサイトに近いサブパス `/repo/` でPWAを配信します。使用中ポートを変える場合は `FUMIZUKUE_PWA_PORT` を設定してください。
 
-## キャッシュ方針
+公開用のこのリポジトリだけを取得した場合、上記の npm スクリプトは含まれません。その場合はリポジトリのルートで `python -m http.server 8000` を実行し、`http://localhost:8000/` を開いてください。
 
-- 初回インストール時にアプリ本体をキャッシュします。
-- オンライン時はネットワークを優先して最新版を取得し、成功したレスポンスをキャッシュ更新します。
-- オフライン時は最後に取得できたキャッシュへフォールバックします。
-- Service Worker は自身の scope 内だけを処理するため、同一 GitHub Pages ドメイン上の別パスを誤ってキャッシュしません。
+## 公開URLと保存データ
 
-通常の CSS / JS 更新では `CACHE_NAME` を毎回変更する必要はありません。キャッシュ構造そのものを変更したときだけ、`sw.js` の `CACHE_NAME` を更新してください。
+ローカルの `App-WPA/` から `App-PWA/` へのフォルダ名変更は、この公開フォルダの名前だけを変えます。GitHub上の公開URLやPagesの公開元設定は変更しません。公開済みURLを変える場合は、GitHub側の公開元を別途更新する必要があります。
+
+2026-09-27時点で、本人から、GitHubで発行済みのURLをスマートフォンでも利用できていると報告を受けています。これは本人の利用報告です。
+
+作品データはブラウザの同じオリジン内に保存されます。公開先のドメイン・プロトコル・ポートが変わるとブラウザ保存領域も分かれるため、その場合は旧URLで作品JSONを書き出し、新URLで取り込んでください。フォルダのパスだけを変え、オリジンが同じなら `localStorage` の復元コピーはそのまま使えます。作品JSONも定期的に書き出してください。
