@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'fumizukue-1eb173e9ce22';
+const CACHE_NAME = 'fumizukue-0f5585499dc8';
 const SCOPE = self.registration.scope;
 const SCOPE_URL = new URL(SCOPE);
 const shellUrl = path => new URL(path, SCOPE).href;
@@ -9,9 +9,19 @@ const APP_SHELL = [
   './',
   './index.html',
   './styles.css',
+  './model.js',
   './core.js',
+  './editor-state.js',
+  './migration.js',
+  './package.js',
+  './storage.js',
   './images.js',
+  './archive.js',
+  './vendor/fflate.mjs',
+  './plot.js',
+  './characters.js',
   './app.js',
+  './workspace-loader.js',
   './pwa.js',
   './manifest.webmanifest',
   './icons/icon-192.png',

@@ -1,35 +1,43 @@
-# 文机 PWA 配布フォルダ
+# 文机 PWA 配布手順
 
-この内容が `App-PWA/` にビルドされます。GitHub Pages などのHTTPS静的ホスティングでは、`App-PWA/` 内のファイル一式を公開ルートへ配置し、相対パスを保ってください。
+このフォルダはPWA配布の編集元です。`npm run build` がソースをまとめ、`dist/pwa/` に配布物一式を生成します。旧 `App-PWA/` フォルダとルートの単体HTMLは配布対象から外しました。
 
-現在の公開ページ：[文机](https://jueyuedao-ship-it.github.io/novelwrite-pwa/)（[公開用リポジトリ](https://github.com/jueyuedao-ship-it/novelwrite-pwa)）。
+## 公開リポジトリへ配置する
 
-## 配布ファイル
+1. `npm run build` を実行します。
+2. `dist/pwa/` の中身すべてを公開用リポジトリのルートへコピーします。`index.html`、`.nojekyll`、`manifest.webmanifest`、`sw.js`、アイコンとJavaScript資源の相対位置を保ってください。
+3. 公開用リポジトリの差分を確認し、Pagesの既存設定とURLを維持して更新します。
+4. 公開後にChrome・Edgeのオンライン起動、オフライン再起動、Service Worker更新、390px幅を確認します。iPhone実機のSafariとホーム画面アプリは実機で別途確認してください。
 
-- `index.html`、`styles.css`、`core.js`、`images.js`、`app.js`：共通の `src/` から生成
-- `pwa.js`：`src/pwa.js` から生成し、Service Worker を登録
-- `manifest.webmanifest`、`sw.js`、`icons/`、`.nojekyll`：この `pwa/` フォルダで管理し、ビルド時に配置
-- `sw.js` のキャッシュ名はアプリの内容から生成されます。アプリ更新時に新しいキャッシュを作成し、古い文机用キャッシュを有効化時に削除します。
+アプリ本体・Service Worker・manifestは `./` から始まる相対URLです。公開先のルートとGitHub Pagesプロジェクトサイトのような `/repo/` 配下の両方で使えます。Service Workerはアプリ画面と、初回操作時に使うプロット・キャラクター・`archive.js`・`vendor/fflate.mjs` をインストール時にキャッシュします。コードは各画面・ZIP操作まで遅延読込されます。
 
-GitHub Pagesのプロジェクトサイトのようにリポジトリ名の下へ公開する場合も、CSS・JavaScript・マニフェスト・アイコン・Service Workerは `./` 相対参照のままにします。
+## 旧版から移行して新ZIPを作る
 
-## ローカルでのHTTP確認
+旧版は作品JSONとlocalStorageの復元用コピー、新PWAはIndexedDBとZIPを使います。旧版にはZIP出力がないため、公開更新前に旧版を開き、「JSON書き出し」で作品JSONを保存してください。新PWAを同じブラウザ・同じ公開URLで開いたときに旧復元用コピーが見つかったら内容と日時を確かめて復元します。案内が出なければ、「作品を開く」から旧JSON version 1〜3を読み込みます。
 
-Service Worker は `file://` では動作しません。開発用の元プロジェクトで確認する場合は、そのルートから次を実行し、出力された `http://127.0.0.1:4174/repo/` を開いてください。
+作品と画像を確認したら「ZIPで保存」を実行し、ZIPファイルを端末外の保存先へコピーします。これを新PWAの手動バックアップとして保管し、作業の区切りごとに更新してください。復元時は新PWAの「作品を開く」からZIPを読み込みます。新ZIPは旧版との互換形式ではありません。旧復元コピーは移行後もブラウザ内に残ります。
+
+## ローカル確認
+
+プロジェクトルートで実行します。
 
 ```powershell
 npm.cmd run build
 npm.cmd run serve:pwa
 ```
 
-このサーバーはGitHub Pagesのプロジェクトサイトに近いサブパス `/repo/` でPWAを配信します。使用中ポートを変える場合は `FUMIZUKUE_PWA_PORT` を設定してください。
+ChromeまたはEdgeで `http://127.0.0.1:4174/repo/` を開くと、ビルド済み `dist/pwa/` がサブパス配信されます。
 
-公開用のこのリポジトリだけを取得した場合、上記の npm スクリプトは含まれません。その場合はリポジトリのルートで `python -m http.server 8000` を実行し、`http://localhost:8000/` を開いてください。
+## 公開先と端末データ
 
-## 公開URLと保存データ
+現在の公開先は[文机](https://jueyuedao-ship-it.github.io/novelwrite-pwa/)（[公開リポジトリ](https://github.com/jueyuedao-ship-it/novelwrite-pwa)）です。ローカルビルドはこの公開リポジトリを変更しません。
 
-ローカルの `App-WPA/` から `App-PWA/` へのフォルダ名変更は、この公開フォルダの名前だけを変えます。GitHub上の公開URLやPagesの公開元設定は変更しません。公開済みURLを変える場合は、GitHub側の公開元を別途更新する必要があります。
+作品データは公開URLとブラウザの保存領域に結びつきます。ドメイン、プロトコル、ポートが変わると別の保存領域になるため、ZIPを書き出して新しいURLで取り込んでください。
 
-2026-09-27時点で、本人から、GitHubで発行済みのURLをスマートフォンでも利用できていると報告を受けています。これは本人の利用報告です。
+### Safariとホーム画面アプリ間で移す
 
-作品データはブラウザの同じオリジン内に保存されます。公開先のドメイン・プロトコル・ポートが変わるとブラウザ保存領域も分かれるため、その場合は旧URLで作品JSONを書き出し、新URLで取り込んでください。フォルダのパスだけを変え、オリジンが同じなら `localStorage` の復元コピーはそのまま使えます。作品JSONも定期的に書き出してください。
+iPhoneではSafariとホーム画面に追加したWebアプリの保存領域は共有されません。WebKitによると、ホーム画面アプリの作成時にコピーされるのはCookieだけで、IndexedDBなど他のローカルデータはコピーされず、作成後も他のWebサイトデータは共有されません（[WebKit: Safari 17.2のWebアプリとCookie](https://webkit.org/blog/14787/webkit-features-in-safari-17-2/)）。文机の作品データはIndexedDBに保存されるため、同じURLを開いても自動では移りません。
+
+Safariからホーム画面アプリへ移す場合は、Safari版で「ZIPで保存」を押し、ダウンロードしたZIPを共有シートから「ファイルに保存」します。ホーム画面アプリを開き、「作品を開く」から「ファイル」に保存したZIPを選びます。作品を置き換える確認が出たら、内容を確認して読み込みます。
+
+ホーム画面アプリからSafariへ戻す場合も同じ手順です。ホーム画面アプリでZIPを書き出して「ファイル」に保存し、Safariで文机を開いて「作品を開く」からそのZIPを読み込みます。移送先に必要な作品を読み込んだことを確認してから作業を続けてください。

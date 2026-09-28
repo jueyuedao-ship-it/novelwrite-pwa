@@ -83,6 +83,7 @@
     if (text.slice(start, end) === insert) return { chapter: ch, caret: start + insert.length };
     const a = locate(ch, start), b = locate(ch, end);
     const first = ch.lines[a.index], last = ch.lines[b.index];
+    const sourceLines = ch.lines.slice(a.index, b.index + 1);
     // A normal single-line edit keeps its metadata even when all characters are replaced.
     // Replacing an entire multi-line manuscript has no reliable scene correspondence.
     const wholesale = ch.lines.length > 1 && start === 0 && end === text.length && /[^\n]/.test(text);
@@ -101,6 +102,21 @@
       replacement.at(-1).speaker = last.speaker;
     }
     if (merged) replacement[0].speaker = chosenSpeaker === undefined ? speakers[0] : chosenSpeaker;
+    const hasCharacterReferences = sourceLines.some(source => Object.prototype.hasOwnProperty.call(source, 'characterId'));
+    if (hasCharacterReferences) {
+      const characterIdForSpeaker = speaker => {
+        const matches = sourceLines.filter(source => source.speaker === speaker);
+        if (!matches.length || matches.some(source => !source.characterId)) return null;
+        const ids = new Set(matches.map(source => source.characterId));
+        return ids.size === 1 ? ids.values().next().value : null;
+      };
+      replacement.forEach(result => {
+        if (merged) result.characterId = characterIdForSpeaker(result.speaker);
+        else if (keepLeft && result.id === first.id) result.characterId = first.characterId ?? null;
+        else if (keepRight && result.id === last.id) result.characterId = last.characterId ?? null;
+        else result.characterId = characterIdForSpeaker(result.speaker);
+      });
+    }
     const mapping = new Map(ch.lines.slice(a.index, b.index + 1).map(l => [l.id, []]));
     if (same && keepLeft) mapping.set(first.id, replacement.map(l => l.id));
     else {
