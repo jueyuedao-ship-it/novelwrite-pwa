@@ -90,3 +90,6 @@
 @media(max-width:800px){.image-toggle{font-size:12px;min-height:40px;padding:6px 9px}.image-gallery-message{font-size:13px}}
 .reference-panel-dialog{width:min(760px,calc(100vw - 32px));max-width:760px;max-height:min(84vh,760px);padding:0;overflow:auto;border:1px solid #d0dccd;border-radius:12px}.reference-panel-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:20px 24px;border-bottom:1px solid var(--line);background:#f9faf5}.reference-panel-heading h2{font-size:19px;margin-top:5px}.reference-panel-body{padding:18px 24px 24px}.reference-panel-fields{margin:0;display:grid;gap:8px}.reference-panel-field{display:grid;grid-template-columns:minmax(140px,200px) minmax(0,1fr);gap:12px;padding:11px 12px;border-radius:7px;background:#f8f9f4}.reference-panel-field dt{font-size:12px;font-weight:600;color:#65756c}.reference-panel-field dd{margin:0;font-size:13px;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere}
 @media(max-width:600px){.reference-panel-heading{padding:16px}.reference-panel-body{padding:12px 16px 18px}.reference-panel-field{grid-template-columns:1fr;gap:4px}}
+/* When the sidebar is hidden for Plot or Characters, let the only visible pane span the full grid. */
+.workspace:has(> .sidebar[hidden]){grid-template-columns:minmax(0,1fr)}
+.workspace:has(> .sidebar[hidden])>#main{grid-column:1/-1}
