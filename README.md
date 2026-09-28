@@ -2,6 +2,8 @@
 
 この内容が `App-PWA/` にビルドされます。GitHub Pages などのHTTPS静的ホスティングでは、`App-PWA/` 内のファイル一式を公開ルートへ配置し、相対パスを保ってください。
 
+現在の公開ページ：[文机](https://jueyuedao-ship-it.github.io/novelwrite-pwa/)（[公開用リポジトリ](https://github.com/jueyuedao-ship-it/novelwrite-pwa)）。
+
 ## 配布ファイル
 
 - `index.html`、`styles.css`、`core.js`、`images.js`、`app.js`：共通の `src/` から生成
