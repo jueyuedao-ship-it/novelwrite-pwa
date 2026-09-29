@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'fumizukue-26a2ba1b125d';
+const CACHE_NAME = 'fumizukue-f5659d032757';
 const SCOPE = self.registration.scope;
 const SCOPE_URL = new URL(SCOPE);
 const shellUrl = path => new URL(path, SCOPE).href;
@@ -27,6 +27,7 @@ const APP_SHELL = [
   './icons/icon-192.png',
   './icons/icon-512.png'
 ].map(shellUrl);
+const APP_SHELL_URLS = new Set(APP_SHELL);
 
 const OFFLINE_DOCUMENT = shellUrl('./index.html');
 
@@ -34,7 +35,6 @@ self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => cache.addAll(APP_SHELL))
-      .then(() => self.skipWaiting())
   );
 });
 
@@ -61,29 +61,41 @@ self.addEventListener('fetch', event => {
   if (url.origin !== SCOPE_URL.origin || !url.pathname.startsWith(SCOPE_URL.pathname)) return;
 
   if (request.mode === 'navigate') {
-    event.respondWith(networkFirst(request, OFFLINE_DOCUMENT));
+    event.respondWith(cacheFirst(OFFLINE_DOCUMENT));
     return;
   }
 
-  event.respondWith(networkFirst(request));
+  event.respondWith(APP_SHELL_URLS.has(url.href) ? cacheFirst(request) : networkFirst(request));
 });
+
+async function cacheFirst(request) {
+  const cache = await caches.open(CACHE_NAME);
+  const cached = await cache.match(request);
+  if (cached) return cached;
+  const response = await fetch(request);
+  if (response && response.ok) await cache.put(request, response.clone());
+  return response;
+}
 
 async function networkFirst(request, fallbackUrl = null) {
   const cache = await caches.open(CACHE_NAME);
-
+  let response;
+  let networkError;
   try {
-    const response = await fetch(request);
-    if (response && response.ok) await cache.put(request, response.clone());
-    return response;
-  } catch (error) {
-    const cached = await cache.match(request);
-    if (cached) return cached;
-
-    if (fallbackUrl) {
-      const fallback = await cache.match(fallbackUrl);
-      if (fallback) return fallback;
+    response = await fetch(request);
+    if (response && response.ok) {
+      await cache.put(request, response.clone());
+      return response;
     }
-
-    throw error;
+  } catch (error) {
+    networkError = error;
   }
+  const cached = await cache.match(request);
+  if (cached) return cached;
+  if (fallbackUrl) {
+    const fallback = await cache.match(fallbackUrl);
+    if (fallback) return fallback;
+  }
+  if (response) return response;
+  throw networkError;
 }

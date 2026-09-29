@@ -5,6 +5,7 @@
   const E = NovelEditorState;
   const $ = id => document.getElementById(id);
   const RECOVERY_KEY = 'fumizukue.recovery.v1';
+  const MAX_LEGACY_JSON_BYTES = 384 * 1024 * 1024;
 
   function indexOf(work) {
     return { work: { schemaVersion: work.schemaVersion, id: work.id, title: work.title, summary: work.summary }, chapters: work.chapters, episodes: work.episodes.map(({ id, workId, chapterId, title, order }) => ({ id, workId, chapterId, title, order })), characters: work.characters };
@@ -106,11 +107,23 @@
     const status = $('save-status');
     status.className = '';
     if (dbError) { status.textContent = `保存先を利用できません：${dbError}`; status.classList.add('save-error'); }
-    else if (saveError && savedRevision < saveRevision) { status.textContent = `保存できません：${saveError}`; status.classList.add('save-error'); }
+    else if (saveError) { status.textContent = `保存できません：${saveError}`; status.classList.add('save-error'); }
     else if (saveInFlight) { status.textContent = '保存中…'; status.classList.add('save-pending'); }
     else if (saveTimer) { status.textContent = '保存待ち…'; status.classList.add('save-pending'); }
     else if (savedRevision >= saveRevision) { status.textContent = backupTimestamp ? `保存済み · ${backupTimestamp}` : '保存済み'; status.classList.add('save-success'); }
     else { status.textContent = '未保存の変更あり'; status.classList.add('save-pending'); }
+  }
+  function beginImageLoad() {
+    pendingImageLoads++;
+    paintSaveStatus();
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      pendingImageLoads--;
+      if (pendingChanges && !saveError) scheduleSave(0);
+      paintSaveStatus();
+    };
   }
   function scheduleSave(delay = 350) {
     clearTimeout(saveTimer);
@@ -958,7 +971,9 @@
       const archive = await loadArchiveModule();
       const blob = await archive.exportArchive(fullPackage);
       download(blob, `${filename(fullPackage.work.title)}.zip`);
-      toast(saveWarning ? `端末内保存に失敗しましたが、現在の編集を含むZIPを書き出しました。${saveWarning}` : 'ZIPバックアップを書き出しました。');
+      toast(saveWarning
+        ? `端末内保存に失敗しました。現在の編集を含むZIPのダウンロードを開始したので、保存先のファイルを確認してください。${saveWarning}`
+        : 'ZIPのダウンロードを開始しました。保存先のファイルを確認してください。');
     } catch (error) { toast(`ZIPを書き出せませんでした：${error.message}`); }
   }
   async function importFile(file) {
@@ -971,6 +986,7 @@
       if (zipFile) {
         const archive = await loadArchiveModule(); value = await archive.importArchive(file);
       } else {
+        if (file.size > MAX_LEGACY_JSON_BYTES) throw new Error('JSONファイルのサイズが384MBを超えています。');
         value = NovelMigration.migrateLegacy(await file.text());
         value = await NovelPackage.validatePackage(value);
       }
@@ -1064,6 +1080,7 @@
     loadEpisode: id => db ? NovelStorage.loadEpisode(db, id) : requireStore(),
     loadScenes: scope => db ? NovelStorage.loadScenes(db, scope) : requireStore(),
     loadImage: id => db ? NovelStorage.loadImage(db, id) : requireStore(),
+    beginImageLoad,
     openPlotScene: scene => openExtensionReference('plot', 'openScene', scene),
     openCharacter: characterId => openExtensionReference('characters', 'openCharacter', characterId),
     subscribe: listener => {

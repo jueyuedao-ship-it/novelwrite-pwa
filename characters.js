@@ -222,6 +222,7 @@
         fileInput.setAttribute('aria-label', 'キャラクターの参考画像ファイル'); imagePanel.append(fileInput);
         fileInput.addEventListener('change', async () => {
           if (!fileInput.files.length) return;
+          const finishImageLoad = workspace.beginImageLoad();
           try {
             const records = [];
             for (const file of fileInput.files) records.push(await readImage(file));
@@ -236,6 +237,7 @@
             commitPatch({ workId: latest.work.id, characters: { upsert: [updated], deleteIds: [] }, images: { upsert: images, deleteIds: [] } });
             await render();
           } catch (error) { workspace.toast(`参考画像を追加できませんでした：${error.message}`); }
+          finally { finishImageLoad(); }
         });
         const imageTools = node('div', 'character-image-tools');
         imageTools.append(makeButton('参考画像を表示', async () => {

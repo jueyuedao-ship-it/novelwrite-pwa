@@ -3,6 +3,7 @@
   'use strict';
 
   const model = typeof module !== 'undefined' && module.exports ? require('./model') : root.NovelModel;
+  const core = typeof module !== 'undefined' && module.exports ? require('./core') : root.NovelCore;
   const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
   const CRC_TABLE = (() => {
     const table = new Uint32Array(256);
@@ -173,6 +174,7 @@
         typeof mimeType !== 'string' || blob.type.toLowerCase() !== mimeType || !IMAGE_TYPES.has(mimeType)) {
       throw new Error('画像本体がBlobではないか、形式が一致しません。');
     }
+    if (blob.size > core.MAX_IMAGE_BYTES) throw new Error('画像は1枚10MB以下にしてください。');
     const bytes = new Uint8Array(await blob.arrayBuffer());
     if (!validImageBytes(mimeType, bytes)) throw new Error('画像データが破損しているか、形式が一致しません。');
     if (typeof root.createImageBitmap === 'function') {

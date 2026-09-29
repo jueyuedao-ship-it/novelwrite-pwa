@@ -6,7 +6,7 @@
   const FORMAT = 'fumizukue-work-archive';
   const FORMAT_VERSION = 1;
   const JSON_FILES = ['work.json', 'manuscript.json', 'plot.json', 'characters.json'];
-  const MAX_ZIP_BYTES = 128 * 1024 * 1024;
+  const MAX_ZIP_BYTES = 258 * 1024 * 1024;
   const MAX_ENTRY_BYTES = 64 * 1024 * 1024;
   const MAX_TOTAL_BYTES = 256 * 1024 * 1024;
   const MAX_ENTRIES = 10010;
@@ -139,7 +139,6 @@
     }
     const value = await packageTools.validatePackage(rawPackage);
     const zip = await loadZipLibrary();
-    const files = {};
     const payloads = {
       'work.json': {
         schemaVersion: value.work.schemaVersion, id: value.work.id,
@@ -150,40 +149,60 @@
       'characters.json': { characters: value.work.characters }
     };
     const hashes = {};
+    const jsonFiles = [];
     let totalBytes = 0;
     for (const name of JSON_FILES) {
       const bytes = encode(JSON.stringify(payloads[name]));
       if (bytes.length > MAX_ENTRY_BYTES) throw new Error(`${name}のサイズが上限を超えています。`);
       totalBytes += bytes.length;
-      files[name] = bytes;
+      jsonFiles.push([name, bytes]);
       hashes[name] = await sha256(bytes);
     }
 
     const payloadById = new Map(value.images.map(image => [image.id, image]));
-    const manifestImages = [];
-    let index = 0;
-    for (const metadata of value.work.images) {
-      index++;
+    const imageEntries = value.work.images.map((metadata, index) => {
       const image = payloadById.get(metadata.id);
       if (!image) throw new Error('作品から参照されている画像本体がありません。');
-      const path = `images/${String(index).padStart(4, '0')}.${extensionFor(image.mimeType)}`;
-      const bytes = new Uint8Array(await image.blob.arrayBuffer());
-      if (bytes.length > MAX_ENTRY_BYTES) throw new Error('ZIP内の画像サイズが上限を超えています。');
-      totalBytes += bytes.length;
-      const digest = await sha256(bytes);
-      files[path] = bytes;
-      manifestImages.push({ id: image.id, mimeType: image.mimeType, path, sha256: digest });
-    }
-    files['manifest.json'] = encode(JSON.stringify({
+      totalBytes += image.blob.size;
+      return { image, path: `images/${String(index + 1).padStart(4, '0')}.${extensionFor(image.mimeType)}` };
+    });
+    const manifest = {
       format: FORMAT, formatVersion: FORMAT_VERSION, workId: value.work.id,
-      hashes, images: manifestImages
-    }));
-    if (files['manifest.json'].length > MAX_ENTRY_BYTES || totalBytes + files['manifest.json'].length > MAX_TOTAL_BYTES) {
+      hashes, images: imageEntries.map(({ image, path }) => ({ id: image.id, mimeType: image.mimeType, path, sha256: '0'.repeat(64) }))
+    };
+    const manifestSize = encode(JSON.stringify(manifest)).length;
+    if (manifestSize > MAX_ENTRY_BYTES || totalBytes + manifestSize > MAX_TOTAL_BYTES) {
       throw new Error('ZIP展開後のデータサイズが上限を超えています。');
     }
-    const zipBytes = zip.zipSync(files, { level: 0 });
-    if (zipBytes.length > MAX_ZIP_BYTES) throw new Error('ZIPファイルのサイズが上限を超えています。');
-    return new Blob([zipBytes], { type: 'application/zip' });
+
+    const chunks = [];
+    let zipSize = 0;
+    let writer;
+    const output = new Promise((resolve, reject) => {
+      writer = new zip.Zip((error, chunk, final) => {
+        if (error) { reject(error); return; }
+        zipSize += chunk.length;
+        if (zipSize > MAX_ZIP_BYTES) { reject(new Error('ZIPファイルのサイズが上限を超えています。')); return; }
+        chunks.push(chunk);
+        if (final) resolve(new Blob(chunks, { type: 'application/zip' }));
+      });
+    });
+    const add = (name, bytes) => {
+      const entry = new zip.ZipPassThrough(name);
+      writer.add(entry);
+      entry.push(bytes, true);
+    };
+    for (const [name, bytes] of jsonFiles) add(name, bytes);
+    for (let index = 0; index < imageEntries.length; index++) {
+      const { image, path } = imageEntries[index];
+      const bytes = new Uint8Array(await image.blob.arrayBuffer());
+      if (bytes.length > MAX_ENTRY_BYTES) throw new Error('ZIP内の画像サイズが上限を超えています。');
+      manifest.images[index].sha256 = await sha256(bytes);
+      add(path, bytes);
+    }
+    add('manifest.json', encode(JSON.stringify(manifest)));
+    writer.end();
+    return output;
   }
 
   async function importArchive(file) {

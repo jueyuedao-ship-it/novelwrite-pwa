@@ -268,6 +268,7 @@
       picker.accept = 'image/png,image/jpeg,image/webp,image/gif'; picker.setAttribute('aria-label', 'シーンの参考画像ファイル');
       picker.addEventListener('change', async () => {
         if (!picker.files.length) return;
+        const finishImageLoad = workspace.beginImageLoad();
         try {
           const records = [];
           for (const file of picker.files) records.push(await readImage(file));
@@ -284,6 +285,7 @@
           commitPatch({ workId: state.work.id, scenes: { upsert: [updated], deleteIds: [] }, images: { upsert: images, deleteIds: [] } }, null);
           await render();
         } catch (error) { workspace.toast(`参考画像を追加できませんでした：${error.message}`); }
+        finally { finishImageLoad(); }
       });
       picker.click();
     }

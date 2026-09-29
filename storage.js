@@ -7,6 +7,9 @@
   const DATABASE_VERSION = 4;
   const STORE_NAMES = ['works', 'chapters', 'episodes', 'episodeBodies', 'scenes', 'characters', 'images', 'imageBlobs', 'lineCharacterRefs', 'idRegistry'];
   const MODEL_VERSION = 4;
+  const workRevisions = new WeakMap();
+  const savedRevision = work => Number.isSafeInteger(work?._revision) ? work._revision : 0;
+  const conflictError = () => new Error('別の画面で作品が更新されました。現在の編集をコピーするか、ZIP・TXTで退避し、画面を再読み込みしてください。');
 
   function openStore(options = {}) {
     const factory = options.indexedDB || root.indexedDB;
@@ -150,9 +153,27 @@
       request.onsuccess = () => {
         const db = request.result;
         if (settled) { db.close(); return; }
-        settled = true;
         db.onversionchange = () => db.close();
-        resolve(db);
+        try {
+          const tx = db.transaction('works', 'readonly');
+          const workRequest = tx.objectStore('works').getAll();
+          tx.oncomplete = () => {
+            if (settled) { db.close(); return; }
+            settled = true;
+            workRevisions.set(db, savedRevision(workRequest.result[0]));
+            resolve(db);
+          };
+          tx.onabort = () => {
+            if (settled) return;
+            settled = true;
+            db.close();
+            reject(tx.error || new Error('作品データベースを開けません。'));
+          };
+        } catch (error) {
+          settled = true;
+          db.close();
+          reject(error);
+        }
       };
     });
   }
@@ -231,46 +252,55 @@
     const value = await packageTools.validatePackage(rawPackage);
     const tx = store.transaction(STORE_NAMES, 'readwrite');
     const saved = transactionPromise(tx, () => value);
-    try {
-      for (const name of STORE_NAMES) tx.objectStore(name).clear();
-      const work = value.work;
-      tx.objectStore('works').put({ schemaVersion: work.schemaVersion, id: work.id, title: work.title, summary: work.summary });
-      const idRegistry = tx.objectStore('idRegistry');
-      putRegistry(idRegistry, work.id, work.id, 'work', 'work', work.id);
-      work.chapters.forEach((chapter, index) => {
-        tx.objectStore('chapters').put({ ...chapter, _sequence: index });
-        putRegistry(idRegistry, chapter.id, work.id, 'chapter', 'chapter', chapter.id);
-      });
-      work.episodes.forEach((episode, index) => {
-        const { lines, ...metadata } = episode;
-        tx.objectStore('episodes').put({ ...metadata, _sequence: index });
-        tx.objectStore('episodeBodies').put({ id: episode.id, workId: episode.workId, lines });
-        putRegistry(idRegistry, episode.id, work.id, 'episode', 'episode', episode.id);
-        addLineCharacterRefs(tx.objectStore('lineCharacterRefs'), episode.id, episode.workId, lines);
-        for (const line of lines) putRegistry(idRegistry, line.id, work.id, 'line', 'episodeLine', episode.id);
-      });
-      work.scenes.forEach((scene, index) => {
-        tx.objectStore('scenes').put({ ...scene, _sequence: index, scopeKey: sceneScopeKey(scene) });
-        putRegistry(idRegistry, scene.id, work.id, 'scene', 'scene', scene.id);
-      });
-      work.characters.forEach((character, index) => {
-        tx.objectStore('characters').put({ ...character, _sequence: index });
-        putRegistry(idRegistry, character.id, work.id, 'character', 'character', character.id);
-        for (const field of character.customFields) putRegistry(idRegistry, field.id, work.id, 'customField', 'customField', character.id);
-      });
-      const payloadById = new Map(value.images.map(image => [image.id, image]));
-      work.images.forEach((metadata, index) => {
-        tx.objectStore('images').put({ ...metadata, _sequence: index });
-        putRegistry(idRegistry, metadata.id, work.id, 'image', 'image', metadata.id);
-        const payload = payloadById.get(metadata.id);
-        tx.objectStore('imageBlobs').put({ id: metadata.id, workId: work.id, mimeType: metadata.mimeType, blob: payload.blob });
-      });
-    } catch (error) {
-      try { tx.abort(); } catch { /* A request may already have aborted the transaction. */ }
-      await saved.catch(() => {});
-      throw error;
-    }
-    await saved;
+    const expectedRevision = workRevisions.get(store);
+    let failure, nextRevision;
+    const currentRequest = tx.objectStore('works').getAll();
+    currentRequest.onsuccess = () => {
+      try {
+        const currentRevision = savedRevision(currentRequest.result[0]);
+        if (expectedRevision !== undefined && expectedRevision !== currentRevision) throw conflictError();
+        nextRevision = currentRevision + 1;
+        for (const name of STORE_NAMES) tx.objectStore(name).clear();
+        const work = value.work;
+        tx.objectStore('works').put({ schemaVersion: work.schemaVersion, id: work.id, title: work.title, summary: work.summary, _revision: nextRevision });
+        const idRegistry = tx.objectStore('idRegistry');
+        putRegistry(idRegistry, work.id, work.id, 'work', 'work', work.id);
+        work.chapters.forEach((chapter, index) => {
+          tx.objectStore('chapters').put({ ...chapter, _sequence: index });
+          putRegistry(idRegistry, chapter.id, work.id, 'chapter', 'chapter', chapter.id);
+        });
+        work.episodes.forEach((episode, index) => {
+          const { lines, ...metadata } = episode;
+          tx.objectStore('episodes').put({ ...metadata, _sequence: index });
+          tx.objectStore('episodeBodies').put({ id: episode.id, workId: episode.workId, lines });
+          putRegistry(idRegistry, episode.id, work.id, 'episode', 'episode', episode.id);
+          addLineCharacterRefs(tx.objectStore('lineCharacterRefs'), episode.id, episode.workId, lines);
+          for (const line of lines) putRegistry(idRegistry, line.id, work.id, 'line', 'episodeLine', episode.id);
+        });
+        work.scenes.forEach((scene, index) => {
+          tx.objectStore('scenes').put({ ...scene, _sequence: index, scopeKey: sceneScopeKey(scene) });
+          putRegistry(idRegistry, scene.id, work.id, 'scene', 'scene', scene.id);
+        });
+        work.characters.forEach((character, index) => {
+          tx.objectStore('characters').put({ ...character, _sequence: index });
+          putRegistry(idRegistry, character.id, work.id, 'character', 'character', character.id);
+          for (const field of character.customFields) putRegistry(idRegistry, field.id, work.id, 'customField', 'customField', character.id);
+        });
+        const payloadById = new Map(value.images.map(image => [image.id, image]));
+        work.images.forEach((metadata, index) => {
+          tx.objectStore('images').put({ ...metadata, _sequence: index });
+          putRegistry(idRegistry, metadata.id, work.id, 'image', 'image', metadata.id);
+          const payload = payloadById.get(metadata.id);
+          tx.objectStore('imageBlobs').put({ id: metadata.id, workId: work.id, mimeType: metadata.mimeType, blob: payload.blob });
+        });
+      } catch (error) {
+        failure = error;
+        try { tx.abort(); } catch { /* A request may already have aborted the transaction. */ }
+      }
+    };
+    try { await saved; }
+    catch (error) { throw failure || error; }
+    workRevisions.set(store, nextRevision);
     return value;
   }
 
@@ -289,8 +319,9 @@
     return transactionPromise(tx, () => Promise.all([workPromise, indexPromise, episodePromise, characterPromise]))
       .then(([works, chapters, episodes, characters]) => {
         if (works.length > 1) throw new Error('複数の作品が保存されています。');
-        if (!works.length) return null;
+        if (!works.length) { workRevisions.set(store, 0); return null; }
         const work = works[0];
+        workRevisions.set(store, savedRevision(work));
         const chapterValues = chapters.filter(record => record.workId === work.id).sort(orderCompare).map(removeStorageFields);
         const chapterOrder = new Map(chapterValues.map(chapter => [chapter.id, chapter.order]));
         const episodeValues = episodes.filter(record => record.workId === work.id)
@@ -487,6 +518,7 @@
       throw new Error('差分保存にはworkIdが必要です。');
     }
     const workId = changes.workId;
+    const expectedRevision = workRevisions.get(store);
     if (changes.work !== undefined) {
       const work = changes.work;
       if (!work || work.id !== workId || work.schemaVersion !== MODEL_VERSION) throw new Error('作品の差分が不正です。');
@@ -516,6 +548,7 @@
     storeNames.add('idRegistry');
     const tx = store.transaction([...storeNames], 'readwrite');
     let failure;
+    let nextRevision;
     let sequenceSeed = Date.now() * 1000;
     const complete = transactionPromise(tx, () => ({ workId }));
     const abort = error => {
@@ -619,6 +652,9 @@
     function applyChanges(initialValues) {
       const savedWork = workEntry.value;
       if (!savedWork || savedWork.id !== workId) throw new Error('差分保存先の作品がありません。');
+      const currentRevision = savedRevision(savedWork);
+      if (expectedRevision !== undefined && expectedRevision !== currentRevision) throw conflictError();
+      nextRevision = currentRevision + 1;
       for (const [ownerKey, entry] of registryOwners) {
         for (const row of entry.value) tx.objectStore('idRegistry').delete(row.id);
       }
@@ -626,8 +662,11 @@
         const existingLines = new Set((registryOwners.get(registryOwnerKey('episodeLine', episode.id))?.value || []).map(row => row.globalId));
         for (const line of episode.lines) if (!existingLines.has(line.id)) addCandidateId(line.id, 'line');
       }
-      if (changes.work) tx.objectStore('works').put({
-        schemaVersion: MODEL_VERSION, id: workId, title: changes.work.title, summary: changes.work.summary
+      tx.objectStore('works').put({
+        schemaVersion: MODEL_VERSION, id: workId,
+        title: changes.work?.title ?? savedWork.title,
+        summary: changes.work?.summary ?? savedWork.summary,
+        _revision: nextRevision
       });
       const registry = tx.objectStore('idRegistry');
       if (sections.chapters) {
@@ -884,6 +923,7 @@
     };
     try { await complete; }
     catch (error) { throw failure || error; }
+    workRevisions.set(store, nextRevision);
     return { workId };
   }
 
