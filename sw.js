@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'fumizukue-f5659d032757';
+const CACHE_NAME = 'fumizukue-plot-overview-v1';
 const SCOPE = self.registration.scope;
 const SCOPE_URL = new URL(SCOPE);
 const shellUrl = path => new URL(path, SCOPE).href;
@@ -19,6 +19,7 @@ const APP_SHELL = [
   './archive.js',
   './vendor/fflate.mjs',
   './plot.js',
+  './plot-overview.js',
   './characters.js',
   './app.js',
   './workspace-loader.js',
