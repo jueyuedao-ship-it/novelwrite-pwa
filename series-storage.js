@@ -315,16 +315,21 @@
       return value || null;
     }
 
-    async function createSeries(db, values = {}) {
+    function makeSeriesRecord(values = {}, workId = null) {
       const id = values.id || `series-${root.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`}`;
       const stamp = now();
-      const record = {
+      return {
         id,
         title: typeof values.title === 'string' ? values.title : '無題のシリーズ',
         summary: typeof values.summary === 'string' ? values.summary : '',
+        ...(workId ? { lastActiveWorkId: workId } : {}),
         createdAt: stamp,
         updatedAt: stamp
       };
+    }
+
+    async function createSeries(db, values = {}) {
+      const record = makeSeriesRecord(values);
       const tx = db.transaction('series', 'readwrite');
       tx.objectStore('series').add(record);
       await transactionPromise(tx);
@@ -366,10 +371,44 @@
     }
 
     async function setActiveWorkspace(db, seriesId, workId) {
-      const work = await getWorkRecord(db, workId);
+      const [series, work] = await Promise.all([getSeries(db, seriesId), getWorkRecord(db, workId)]);
+      if (!series) throw new Error('シリーズが見つかりません。');
       if (!work || work.seriesId !== seriesId) throw new Error('選択した作品はこのシリーズに属していません。');
+      const stamp = now();
       const value = { id: WORKSPACE_ID, activeSeriesId: seriesId, activeWorkId: workId };
-      const tx = db.transaction('workspaceMeta', 'readwrite');
+      const tx = db.transaction(['series', 'workspaceMeta'], 'readwrite');
+      tx.objectStore('series').put({ ...series, lastActiveWorkId: workId, updatedAt: stamp });
+      tx.objectStore('workspaceMeta').put(value);
+      await transactionPromise(tx);
+      return value;
+    }
+
+    async function setActiveSeries(db, seriesId) {
+      const targetSeries = await getSeries(db, seriesId);
+      if (!targetSeries) throw new Error('シリーズが見つかりません。');
+      const targetWorks = (await listWorks(db, seriesId)).slice().sort((a, b) => String(a.id).localeCompare(String(b.id)));
+      if (!targetWorks.length) throw new Error('作品がないシリーズは開けません。');
+
+      const currentMeta = await getWorkspaceMeta(db);
+      let currentSeries = currentMeta?.activeSeriesId ? await getSeries(db, currentMeta.activeSeriesId) : null;
+      let rememberedTarget = targetSeries;
+      if (currentSeries && currentMeta?.activeWorkId) {
+        const currentWork = await getWorkRecord(db, currentMeta.activeWorkId);
+        if (currentWork?.seriesId === currentSeries.id) {
+          currentSeries = { ...currentSeries, lastActiveWorkId: currentWork.id, updatedAt: now() };
+          if (currentSeries.id === targetSeries.id) rememberedTarget = currentSeries;
+        }
+      }
+
+      const rememberedId = rememberedTarget.lastActiveWorkId;
+      const rememberedWork = rememberedId ? targetWorks.find(work => work.id === rememberedId) : null;
+      const targetWork = rememberedWork || targetWorks[0];
+      const stamp = now();
+      const nextTarget = { ...rememberedTarget, lastActiveWorkId: targetWork.id, updatedAt: stamp };
+      const value = { id: WORKSPACE_ID, activeSeriesId: seriesId, activeWorkId: targetWork.id };
+      const tx = db.transaction(['series', 'workspaceMeta'], 'readwrite');
+      if (currentSeries && currentSeries.id !== nextTarget.id) tx.objectStore('series').put(currentSeries);
+      tx.objectStore('series').put(nextTarget);
       tx.objectStore('workspaceMeta').put(value);
       await transactionPromise(tx);
       return value;
@@ -409,17 +448,10 @@
       const series = await listSeries(db);
       if (series.length) return { seriesId: series[0].id, seriesRecord: null };
       const work = rawPackage?.work;
-      const stamp = now();
       const seriesId = `series-${work?.id || 'initial'}`;
       return {
         seriesId,
-        seriesRecord: {
-          id: seriesId,
-          title: work?.title || '無題のシリーズ',
-          summary: '',
-          createdAt: stamp,
-          updatedAt: stamp
-        }
+        seriesRecord: makeSeriesRecord({ id: seriesId, title: work?.title || '無題のシリーズ', summary: '' }, work?.id || null)
       };
     }
 
@@ -435,13 +467,17 @@
       if (oldWorkId) {
         const oldRecord = await getWorkRecord(db, oldWorkId);
         if (!oldRecord) throw new Error('置き換える作品が見つかりません。');
+        const series = await getSeries(db, oldRecord.seriesId);
+        if (!series) throw new Error('置き換える作品のシリーズが見つかりません。');
         scope = await seedScope(db, oldWorkId);
         scope.seriesId = oldRecord.seriesId;
+        scope.seriesRecord = { ...series, lastActiveWorkId: newWorkId, updatedAt: now() };
       } else {
         const initial = await ensureInitialSeries(db, validated);
         scope = await getScope(db, newWorkId);
         scope.seriesId = initial.seriesId;
-        scope.seriesRecord = initial.seriesRecord;
+        const existingSeries = initial.seriesRecord ? null : await getSeries(db, initial.seriesId);
+        scope.seriesRecord = initial.seriesRecord || (existingSeries ? { ...existingSeries, lastActiveWorkId: newWorkId, updatedAt: now() } : null);
       }
       scope.clearKeys = oldWorkId ? await snapshotWorkKeys(db, oldWorkId) : new Map(BASE_STORE_NAMES.map(name => [name, []]));
       scope.activateOnSave = true;
@@ -465,6 +501,7 @@
       if (await getWorkRecord(db, validated.work.id)) throw new Error('同じ作品IDの作品がすでにあります。');
       const scope = await getScope(db, validated.work.id);
       scope.seriesId = seriesId;
+      scope.seriesRecord = { ...series, lastActiveWorkId: validated.work.id, updatedAt: now() };
       scope.clearKeys = new Map(BASE_STORE_NAMES.map(name => [name, []]));
       scope.activateOnSave = true;
       try {
@@ -473,14 +510,40 @@
         return result;
       } finally {
         scope.activateOnSave = false;
+        scope.seriesRecord = null;
         scope.clearKeys = null;
       }
     }
 
-    async function deleteWorkRows(db, workId, nextMeta) {
-      const names = [...BASE_STORE_NAMES, 'workspaceMeta'];
+    async function createSeriesWithInitialWork(db, seriesValues, rawWorkPackage) {
+      const validated = await packageTools.validatePackage(rawWorkPackage);
+      if (await getWorkRecord(db, validated.work.id)) throw new Error('同じ作品IDの作品がすでにあります。');
+      const record = makeSeriesRecord(seriesValues, validated.work.id);
+      if (await getSeries(db, record.id)) throw new Error('同じシリーズIDのシリーズがすでにあります。');
+      const scope = await getScope(db, validated.work.id);
+      scope.seriesId = record.id;
+      scope.seriesRecord = record;
+      scope.clearKeys = new Map(BASE_STORE_NAMES.map(name => [name, []]));
+      scope.activateOnSave = true;
+      try {
+        await baseStorage.saveWork(scope.proxy, validated);
+        scopesFor(db).delete(validated.work.id);
+        return {
+          series: record,
+          workspaceMeta: { id: WORKSPACE_ID, activeSeriesId: record.id, activeWorkId: validated.work.id }
+        };
+      } finally {
+        scope.activateOnSave = false;
+        scope.seriesRecord = null;
+        scope.clearKeys = null;
+      }
+    }
+
+    async function deleteWorkRows(db, workId, nextMeta, nextSeries = null) {
+      const names = [...BASE_STORE_NAMES, 'workspaceMeta', 'series'];
       const tx = db.transaction(names, 'readwrite');
       for (const name of BASE_STORE_NAMES) deleteRowsForWork(name, tx.objectStore(name), workId);
+      if (nextSeries) tx.objectStore('series').put(nextSeries);
       if (nextMeta) tx.objectStore('workspaceMeta').put(nextMeta);
       await transactionPromise(tx);
     }
@@ -492,11 +555,14 @@
       if (siblings.length <= 1) throw new Error('シリーズの最後の1作品は削除できません。');
       const meta = await getWorkspaceMeta(db);
       let nextMeta = null;
+      let nextSeries = null;
       if (meta?.activeWorkId === workId) {
-        const next = siblings.find(item => item.id !== workId);
+        const next = siblings.filter(item => item.id !== workId).sort((a, b) => String(a.id).localeCompare(String(b.id)))[0];
         nextMeta = { id: WORKSPACE_ID, activeSeriesId: work.seriesId, activeWorkId: next.id };
+        const series = await getSeries(db, work.seriesId);
+        if (series) nextSeries = { ...series, lastActiveWorkId: next.id, updatedAt: now() };
       }
-      await deleteWorkRows(db, workId, nextMeta);
+      await deleteWorkRows(db, workId, nextMeta, nextSeries);
       scopesFor(db).delete(workId);
       return nextMeta || meta;
     }
@@ -514,9 +580,11 @@
       updateSeries,
       listWorks,
       createWorkInSeries,
+      createSeriesWithInitialWork,
       deleteWork,
       getWorkspaceMeta,
       setActiveWorkspace,
+      setActiveSeries,
       repairWorkspace,
       SERIES_DATABASE_VERSION
     });
