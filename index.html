@@ -21,7 +21,6 @@
     <header class="topbar integrated-topbar">
       <a class="brand" href="#main"><span class="brand-mark" aria-hidden="true">文</span><span>文机<small>FUMIZUKUE · NOVEL DESK</small></span></a>
       <nav class="screen-nav" role="tablist" aria-label="作品画面">
-        <button id="tab-series" type="button" role="tab" aria-controls="screen-series" aria-selected="false">シリーズ</button>
         <button id="tab-manuscript" type="button" role="tab" aria-controls="screen-manuscript" aria-selected="true" class="active">本文</button>
         <button id="tab-plot" type="button" role="tab" aria-controls="screen-plot" aria-selected="false">プロット</button>
         <button id="tab-characters" type="button" role="tab" aria-controls="screen-characters" aria-selected="false">キャラクター</button>
@@ -52,17 +51,6 @@
         <div class="sidebar-note"><span class="eyebrow">A PLACE FOR YOUR STORY</span><p>文章と、その向こうの情景を。<br>ひとつの机で、少しずつ。</p></div>
       </aside>
       <main id="main" data-ready="false">
-        <section id="screen-series" class="screen-pane series-screen" role="tabpanel" aria-labelledby="tab-series" aria-label="シリーズ" hidden>
-          <header class="screen-heading"><div class="eyebrow">STORY UNIVERSE</div><h1>シリーズ</h1><p>同じ世界につながる作品を、ひとつの机で管理します。</p></header>
-          <section class="series-settings" aria-label="シリーズ設定">
-            <label for="series-title">シリーズ名</label>
-            <input id="series-title" maxlength="300" autocomplete="off">
-            <label for="series-summary">シリーズ概要</label>
-            <textarea id="series-summary" rows="4" maxlength="8000"></textarea>
-          </section>
-          <div class="series-list-heading"><div><span class="eyebrow">WORKS</span><h2>作品</h2></div><button id="series-add-work" type="button" class="primary">＋ 新しい作品</button></div>
-          <div id="series-works" class="series-works" aria-live="polite"></div>
-        </section>
         <section id="screen-manuscript" class="screen-pane" role="tabpanel" aria-labelledby="tab-manuscript" aria-label="本文">
           <div class="chapter-header"><div><div class="eyebrow" id="episode-position">EPISODE 01</div><label class="sr-only" for="episode-title">話タイトル</label><input id="episode-title" aria-label="話タイトル" maxlength="300"></div></div>
           <div class="status-strip"><span id="recovery-status"></span><span id="word-count"></span></div>
@@ -86,6 +74,21 @@
         </section>
         <section id="screen-plot" class="screen-pane" role="tabpanel" aria-labelledby="tab-plot" aria-label="プロット" hidden>
           <header class="screen-heading"><div class="eyebrow">STORY STRUCTURE</div><h1>プロット</h1><p>章・話・シーンを整理します。</p></header>
+          <section id="series-settings-panel" class="series-settings-panel" aria-labelledby="series-settings-heading">
+            <div class="series-panel-heading">
+              <div><span class="eyebrow">STORY UNIVERSE</span><h2 id="series-settings-heading">シリーズ設定</h2><p>同じ世界につながる作品をまとめて管理します。</p></div>
+              <button id="series-add-work" type="button" class="primary">＋ 新しい作品</button>
+            </div>
+            <p id="series-mode-note" class="series-mode-note" role="status" hidden></p>
+            <div class="series-settings">
+              <label for="series-title">シリーズ名</label>
+              <input id="series-title" maxlength="300" autocomplete="off">
+              <label for="series-summary">シリーズ概要</label>
+              <textarea id="series-summary" rows="3" maxlength="8000"></textarea>
+            </div>
+            <div class="series-list-heading"><div><span class="eyebrow">WORKS</span><h3>シリーズ内の作品</h3></div></div>
+            <div id="series-works" class="series-works" aria-live="polite"></div>
+          </section>
           <div id="plot-extension" class="extension-panel" data-extension="plot"><p>プロット画面を準備しています。</p></div>
         </section>
         <section id="screen-characters" class="screen-pane" role="tabpanel" aria-labelledby="tab-characters" aria-label="キャラクター" hidden>
