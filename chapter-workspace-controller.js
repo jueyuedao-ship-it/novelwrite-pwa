@@ -246,7 +246,7 @@
       const workTitle = $('work-title'); if (workTitle) { workTitle.disabled = chapterMode; workTitle.setAttribute('aria-readonly', String(chapterMode)); }
       const reset = $('reset'); if (reset) reset.disabled = chapterMode;
       const sample = $('load-sample'); if (sample) sample.disabled = chapterMode;
-      const exportButton = $('export-archive'); if (exportButton) exportButton.firstChild.textContent = chapterMode ? '章ZIPで保存 ' : 'ZIPで保存 ';
+      const exportButton = $('export-archive'); if (exportButton) exportButton.firstChild.textContent = chapterMode ? '章ZIPで保存 ' : 'シリーズZIPで保存 ';
       const workOption = $('txt-scope')?.querySelector('option[value="work"]');
       if (workOption) {
         const text = chapterMode ? '読み込み済み章' : '作品全体';
