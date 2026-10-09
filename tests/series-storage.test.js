@@ -24,19 +24,20 @@ function storage() {
 test('v4 single-work database migrates into one series without changing IDs', async () => {
   const name = dbName('migration');
   const original = await legacyDatabase(name, '連作');
-  const db = await storage().openStore({ indexedDB, name });
+  const api = storage();
+  const db = await api.openStore({ indexedDB, name });
   try {
-    const series = await storage().listSeries(db);
+    const series = await api.listSeries(db);
     assert.equal(series.length, 1);
     assert.equal(series[0].title, '連作');
-    const works = await storage().listWorks(db, series[0].id);
+    const works = await api.listWorks(db, series[0].id);
     assert.equal(works.length, 1);
     assert.equal(works[0].id, original.id);
-    const loaded = await storage().loadWork(db, original.id);
+    const loaded = await api.loadWork(db, original.id);
     assert.equal(loaded.work.id, original.id);
     assert.equal(loaded.work.chapters[0].id, original.chapters[0].id);
     assert.equal(loaded.work.episodes[0].id, original.episodes[0].id);
-    const meta = await storage().getWorkspaceMeta(db);
+    const meta = await api.getWorkspaceMeta(db);
     assert.deepEqual(meta, { id: 'current', activeSeriesId: series[0].id, activeWorkId: original.id });
   } finally {
     db.close();
@@ -87,5 +88,82 @@ test('deleteWork removes only the selected work and rejects deleting the final w
     assert.equal((await api.loadWork(db, workA.id)).work.id, workA.id);
   } finally {
     db.close();
+  }
+});
+
+test('legacy loadWork without an id returns only the active work', async () => {
+  const name = dbName('active-load');
+  const workA = await legacyDatabase(name, '作品A');
+  const api = storage();
+  const db = await api.openStore({ indexedDB, name });
+  try {
+    const [series] = await api.listSeries(db);
+    const workB = NovelModel.createWork({ title: '作品B' });
+    await api.createWorkInSeries(db, series.id, packageOf(workB));
+    assert.equal((await api.loadWork(db)).work.id, workB.id);
+    await api.setActiveWorkspace(db, series.id, workA.id);
+    assert.equal((await api.loadWork(db)).work.id, workA.id);
+  } finally {
+    db.close();
+  }
+});
+
+test('saving an imported package with a different work id replaces only the active work', async () => {
+  const name = dbName('replace-id');
+  const workA = await legacyDatabase(name, '作品A');
+  const api = storage();
+  const db = await api.openStore({ indexedDB, name });
+  try {
+    const [series] = await api.listSeries(db);
+    const workB = NovelModel.createWork({ title: '作品B' });
+    await api.createWorkInSeries(db, series.id, packageOf(workB));
+    await api.setActiveWorkspace(db, series.id, workA.id);
+
+    const imported = NovelModel.createWork({ title: '取り込んだ作品' });
+    await api.saveWork(db, packageOf(imported));
+
+    const ids = (await api.listWorks(db, series.id)).map(item => item.id).sort();
+    assert.deepEqual(ids, [workB.id, imported.id].sort());
+    assert.equal(await api.loadWork(db, workA.id), null);
+    assert.equal((await api.loadWork(db, workB.id)).work.title, '作品B');
+    assert.equal((await api.loadWork(db)).work.id, imported.id);
+    assert.deepEqual(await api.getWorkspaceMeta(db), { id: 'current', activeSeriesId: series.id, activeWorkId: imported.id });
+  } finally {
+    db.close();
+  }
+});
+
+test('revisions are isolated per work while stale saves of the same work still conflict', async () => {
+  const name = dbName('revisions');
+  const workA = await legacyDatabase(name, '作品A');
+  const api1 = storage();
+  const db1 = await api1.openStore({ indexedDB, name });
+  let db2;
+  try {
+    const [series] = await api1.listSeries(db1);
+    const workB = NovelModel.createWork({ title: '作品B' });
+    await api1.createWorkInSeries(db1, series.id, packageOf(workB));
+    await api1.loadWorkIndex(db1, workA.id);
+    await api1.loadWorkIndex(db1, workB.id);
+
+    const indexB = await api1.loadWorkIndex(db1, workB.id);
+    await api1.saveChanges(db1, { workId: workB.id, work: { ...indexB.work, title: '作品B 改稿' } });
+    const indexA = await api1.loadWorkIndex(db1, workA.id);
+    await api1.saveChanges(db1, { workId: workA.id, work: { ...indexA.work, title: '作品A 改稿' } });
+    assert.equal((await api1.loadWork(db1, workB.id)).work.title, '作品B 改稿');
+    assert.equal((await api1.loadWork(db1, workA.id)).work.title, '作品A 改稿');
+
+    const api2 = storage();
+    db2 = await api2.openStore({ indexedDB, name });
+    const stale = await api2.loadWorkIndex(db2, workA.id);
+    const fresh = await api1.loadWorkIndex(db1, workA.id);
+    await api1.saveChanges(db1, { workId: workA.id, work: { ...fresh.work, title: '作品A 最新' } });
+    await assert.rejects(
+      () => api2.saveChanges(db2, { workId: workA.id, work: { ...stale.work, title: '作品A 古い変更' } }),
+      /別のタブ|競合|更新/
+    );
+  } finally {
+    db2?.close();
+    db1.close();
   }
 });
