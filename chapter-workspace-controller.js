@@ -239,14 +239,19 @@
         if (chapterMode) {
           const id = workspaceMeta.loadedChapterIds[0];
           const item = workspaceMeta.catalog.find(chapter => chapter.id === id);
-          strip.textContent = `章ワークスペース · ${item?.title || '読み込み済み章'}のみを編集中 · 作品全体ではありません`;
+          const text = `章ワークスペース · ${item?.title || '読み込み済み章'}のみを編集中 · 作品全体ではありません`;
+          if (strip.textContent !== text) strip.textContent = text;
         }
       }
       const workTitle = $('work-title'); if (workTitle) { workTitle.disabled = chapterMode; workTitle.setAttribute('aria-readonly', String(chapterMode)); }
       const reset = $('reset'); if (reset) reset.disabled = chapterMode;
       const sample = $('load-sample'); if (sample) sample.disabled = chapterMode;
       const exportButton = $('export-archive'); if (exportButton) exportButton.firstChild.textContent = chapterMode ? '章ZIPで保存 ' : 'ZIPで保存 ';
-      const workOption = $('txt-scope')?.querySelector('option[value="work"]'); if (workOption) workOption.textContent = chapterMode ? '読み込み済み章' : '作品全体';
+      const workOption = $('txt-scope')?.querySelector('option[value="work"]');
+      if (workOption) {
+        const text = chapterMode ? '読み込み済み章' : '作品全体';
+        if (workOption.textContent !== text) workOption.textContent = text;
+      }
       renderCatalog();
       injectChapterExportButtons();
       protectPlotSharedData();
