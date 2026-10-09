@@ -17,15 +17,16 @@
       event.stopImmediatePropagation();
 
       if (pending.has(screen.name)) return;
+      const chapterMode = globalThis.NovelWorkspace?.getWorkspaceMeta?.()?.mode === 'chapter-workspace';
       const imports = [import(screen.module)];
-      if (screen.companionModule) imports.push(import(screen.companionModule));
+      if (screen.companionModule && !chapterMode) imports.push(import(screen.companionModule));
       const loading = Promise.all(imports).then(() => {
         const extension = globalThis[screen.globalName];
         if (!extension || typeof extension.mount !== 'function') {
           throw new Error(`${screen.name}画面を初期化できません。`);
         }
         extension.mount();
-        if (screen.companionGlobalName) {
+        if (screen.companionGlobalName && !chapterMode) {
           const companion = globalThis[screen.companionGlobalName];
           if (!companion || typeof companion.mount !== 'function') throw new Error(`${screen.name}画面の詳細機能を初期化できません。`);
           companion.mount();
