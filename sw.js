@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'fumizukue-plot-overview-v1';
+const CACHE_NAME = 'fumizukue-series-layer-v1';
 const SCOPE = self.registration.scope;
 const SCOPE_URL = new URL(SCOPE);
 const shellUrl = path => new URL(path, SCOPE).href;
@@ -9,12 +9,14 @@ const APP_SHELL = [
   './',
   './index.html',
   './styles.css',
+  './series.css',
   './model.js',
   './core.js',
   './editor-state.js',
   './migration.js',
   './package.js',
   './storage.js',
+  './series-storage.js',
   './images.js',
   './archive.js',
   './vendor/fflate.mjs',
@@ -22,6 +24,7 @@ const APP_SHELL = [
   './plot-overview.js',
   './characters.js',
   './app.js',
+  './series.js',
   './workspace-loader.js',
   './pwa.js',
   './manifest.webmanifest',
@@ -56,9 +59,6 @@ self.addEventListener('fetch', event => {
   if (request.method !== 'GET') return;
 
   const url = new URL(request.url);
-
-  // A project site on GitHub Pages normally lives under /<repository>/.
-  // Only handle requests inside this Service Worker's own scope.
   if (url.origin !== SCOPE_URL.origin || !url.pathname.startsWith(SCOPE_URL.pathname)) return;
 
   if (request.mode === 'navigate') {
