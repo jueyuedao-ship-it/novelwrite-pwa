@@ -13,6 +13,8 @@
   let archiveLoadPromise = null;
   let applyingUi = false;
   let catalogSignature = '';
+  let operationImageLoads = 0;
+  let compositionDepth = 0;
 
   const clone = value => value == null ? null : structuredClone(value);
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -49,13 +51,21 @@
     }
   }
 
+  function assertFileOperationReady() {
+    const appBusy = $('app')?.getAttribute('aria-busy') === 'true';
+    const manuscriptImageBusy = Boolean(document.querySelector('.image-add:disabled'));
+    if (operationImageLoads || compositionDepth || manuscriptImageBusy) throw new Error('入力・画像の読み込みが終わってから操作してください。');
+    if (appBusy) throw new Error('作品の切り替えが終わってから操作してください。');
+  }
+
   async function waitForSaved() {
+    assertFileOperationReady();
     const end = Date.now() + 15000;
     while (Date.now() < end) {
+      assertFileOperationReady();
       const text = $('save-status')?.textContent || '';
       if (/保存できません|保存先を利用できません/.test(text)) throw new Error(text);
-      const imageBusy = Boolean(document.querySelector('.image-add:disabled'));
-      if (text.includes('保存済み') && !imageBusy) return;
+      if (text.includes('保存済み')) return;
       await sleep(40);
     }
     throw new Error('端末内への保存が完了していません。');
@@ -160,7 +170,8 @@
       const action = document.createElement('button'); action.type = 'button'; action.className = 'quiet';
       if (isLoaded) { action.textContent = '読み込み済み'; action.disabled = true; }
       else {
-        action.textContent = '章ZIPを開く'; action.title = 'この章のデータは読み込まれていません';
+        action.textContent = '章ZIPを開く';
+        action.title = 'この章のデータは読み込まれていません';
         action.addEventListener('click', () => requestChapterImport(item.id));
       }
       row.append(action); host.append(row);
@@ -236,7 +247,10 @@
       const sample = $('load-sample'); if (sample) sample.disabled = chapterMode;
       const exportButton = $('export-archive'); if (exportButton) exportButton.firstChild.textContent = chapterMode ? '章ZIPで保存 ' : 'ZIPで保存 ';
       const workOption = $('txt-scope')?.querySelector('option[value="work"]'); if (workOption) workOption.textContent = chapterMode ? '読み込み済み章' : '作品全体';
-      renderCatalog(); injectChapterExportButtons(); protectPlotSharedData(); protectCharacters();
+      renderCatalog();
+      injectChapterExportButtons();
+      protectPlotSharedData();
+      protectCharacters();
     } finally { applyingUi = false; }
   }
 
@@ -246,23 +260,40 @@
       modeTools.assertPatchAllowed(workspaceMeta, patch, baseWorkspace.getState());
       return baseWorkspace.commit(nextState, patch, historyKey);
     },
+    beginImageLoad() {
+      operationImageLoads++;
+      const finishBase = baseWorkspace.beginImageLoad();
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        operationImageLoads = Math.max(0, operationImageLoads - 1);
+        finishBase();
+      };
+    },
     getWorkspaceMeta: () => clone(workspaceMeta),
     exportChapter
   };
   root.NovelWorkspace = Object.freeze(wrappedWorkspace);
 
+  document.addEventListener('compositionstart', () => { compositionDepth++; }, true);
+  document.addEventListener('compositionend', () => { compositionDepth = Math.max(0, compositionDepth - 1); }, true);
+
   $('import-chapter-button')?.addEventListener('click', () => requestChapterImport(null));
   $('import-chapter-file')?.addEventListener('change', () => {
     const input = $('import-chapter-file'), file = input.files?.[0], expected = expectedImportChapterId;
-    expectedImportChapterId = null; input.value = ''; void importChapterFile(file, expected);
+    expectedImportChapterId = null; input.value = '';
+    void importChapterFile(file, expected);
   });
   $('export-archive')?.addEventListener('click', event => {
     if (workspaceMeta?.mode !== 'chapter-workspace') return;
-    event.preventDefault(); event.stopImmediatePropagation(); void exportChapter(workspaceMeta.loadedChapterIds[0]);
+    event.preventDefault(); event.stopImmediatePropagation();
+    void exportChapter(workspaceMeta.loadedChapterIds[0]);
   }, true);
   document.addEventListener('keydown', event => {
     if (workspaceMeta?.mode !== 'chapter-workspace' || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') return;
-    event.preventDefault(); event.stopImmediatePropagation(); void exportChapter(workspaceMeta.loadedChapterIds[0]);
+    event.preventDefault(); event.stopImmediatePropagation();
+    void exportChapter(workspaceMeta.loadedChapterIds[0]);
   }, true);
 
   const observer = new MutationObserver(() => applyModeUi());
@@ -286,5 +317,10 @@
     }
   })();
 
-  root.NovelChapterWorkspace = Object.freeze({ getWorkspaceMeta: () => clone(workspaceMeta), exportChapter, importChapterFile, refreshWorkspaceMeta });
+  root.NovelChapterWorkspace = Object.freeze({
+    getWorkspaceMeta: () => clone(workspaceMeta),
+    exportChapter,
+    importChapterFile,
+    refreshWorkspaceMeta
+  });
 })(globalThis);
