@@ -20,9 +20,7 @@
   const hex = bytes => Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('');
   const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
-  function encodeJson(value) {
-    return encodeText(JSON.stringify(value));
-  }
+  function encodeJson(value) { return encodeText(JSON.stringify(value)); }
 
   function parseJson(files, name) {
     if (!files || !(files[name] instanceof Uint8Array)) throw new Error(`${name}がありません。`);
@@ -113,18 +111,28 @@
     return { bytes, entries, files, manifest };
   }
 
+  function assertUncompressedBudget(items) {
+    if (!Array.isArray(items)) throw new TypeError('ZIPサイズ見積りが不正です。');
+    let total = 0;
+    for (const item of items) {
+      const size = item?.size;
+      if (!Number.isSafeInteger(size) || size < 0) throw new TypeError('ZIPサイズ見積りが不正です。');
+      if (size > MAX_ENTRY_BYTES) throw new Error(`${item.name || 'ZIPエントリ'}のサイズが上限を超えています。`);
+      total += size;
+      if (total > MAX_TOTAL_BYTES) throw new Error('ZIP展開後のデータサイズが上限を超えています。');
+    }
+    return total;
+  }
+
   async function writeArchive(entries) {
     if (!Array.isArray(entries) || !entries.length || entries.length > MAX_ENTRIES) throw new Error('ZIP内のファイル数が上限を超えています。');
     const seen = new Set();
-    let total = 0;
     for (const entry of entries) {
       if (!entry || typeof entry.name !== 'string' || !entry.name || !(entry.bytes instanceof Uint8Array)) throw new TypeError('ZIPエントリには名前とUint8Arrayが必要です。');
       if (seen.has(entry.name)) throw new Error('ZIPエントリ名が重複しています。');
       seen.add(entry.name);
-      if (entry.bytes.length > MAX_ENTRY_BYTES) throw new Error(`${entry.name}のサイズが上限を超えています。`);
-      total += entry.bytes.length;
-      if (total > MAX_TOTAL_BYTES) throw new Error('ZIP展開後のデータサイズが上限を超えています。');
     }
+    assertUncompressedBudget(entries.map(entry => ({ name: entry.name, size: entry.bytes.length })));
     const zip = await loadZipLibrary();
     const chunks = [];
     let size = 0, writer;
@@ -150,7 +158,7 @@
     return output;
   }
 
-  const api = { MAX_ZIP_BYTES, MAX_ENTRY_BYTES, MAX_TOTAL_BYTES, MAX_ENTRIES, readArchive, writeArchive, sha256, encodeJson, parseJson, extensionFor, preflightZip };
+  const api = { MAX_ZIP_BYTES, MAX_ENTRY_BYTES, MAX_TOTAL_BYTES, MAX_ENTRIES, readArchive, writeArchive, sha256, encodeJson, parseJson, extensionFor, preflightZip, assertUncompressedBudget };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.NovelArchiveCommon = api;
 })(globalThis);
