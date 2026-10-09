@@ -7,7 +7,7 @@ const read = file => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
 
 test('service worker activates a newly installed app shell without waiting for old clients to close', () => {
   const sw = read('sw.js');
-  assert.match(sw, /fumizukue-series-chapter-v3/);
+  assert.match(sw, /fumizukue-series-chapter-v4/);
   assert.match(sw, /self\.skipWaiting\(\)/);
 });
 
