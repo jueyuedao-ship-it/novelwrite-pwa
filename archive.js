@@ -3,14 +3,27 @@
   'use strict';
 
   const packageTools = typeof module !== 'undefined' && module.exports ? require('./package') : root.NovelPackage;
-  const common = typeof module !== 'undefined' && module.exports ? require('./archive-common') : root.NovelArchiveCommon;
+  let common = typeof module !== 'undefined' && module.exports ? require('./archive-common') : root.NovelArchiveCommon;
+  let commonPromise;
+  async function ensureCommon() {
+    if (common) return common;
+    if (!commonPromise) {
+      commonPromise = import('./archive-common.js').then(() => {
+        common = root.NovelArchiveCommon;
+        if (!common) throw new Error('ZIP共通モジュールを読み込めませんでした。');
+        return common;
+      }).catch(error => { commonPromise = null; throw error; });
+    }
+    return commonPromise;
+  }
   const FORMAT = 'fumizukue-work-archive';
   const FORMAT_VERSION = 1;
   const JSON_FILES = ['work.json', 'manuscript.json', 'plot.json', 'characters.json'];
   const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
   async function exportArchive(rawPackage) {
-    if (!packageTools || !common) throw new Error('作品アーカイブ用モジュールが読み込まれていません。');
+    if (!packageTools) throw new Error('作品アーカイブ用モジュールが読み込まれていません。');
+    await ensureCommon();
     if (!rawPackage || !Array.isArray(rawPackage.images)) throw new Error('作品パッケージが不正です。');
     const value = await packageTools.validatePackage(rawPackage);
     const payloads = {
@@ -57,7 +70,8 @@
   }
 
   async function importArchiveRead(readResult) {
-    if (!packageTools || !common) throw new Error('作品アーカイブ用モジュールが読み込まれていません。');
+    if (!packageTools) throw new Error('作品アーカイブ用モジュールが読み込まれていません。');
+    await ensureCommon();
     const read = readResult;
     if (!read || !read.files || !read.manifest || !Array.isArray(read.entries)) throw new Error('ZIP読み込み結果が不正です。');
     const { files, manifest, entries } = read;
@@ -115,7 +129,7 @@
   }
 
   async function importArchive(file) {
-    if (!common) throw new Error('ZIP共通モジュールが読み込まれていません。');
+    await ensureCommon();
     return importArchiveRead(await common.readArchive(file));
   }
 
