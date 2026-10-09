@@ -1,9 +1,8 @@
-/* Series screen and work switching. */
+/* Series settings embedded in the plot screen. */
 (function (root) {
   'use strict';
 
   const $ = id => document.getElementById(id);
-  const existingTabs = ['manuscript', 'plot', 'characters'];
   let db = null;
   let activeSeries = null;
   let activeMeta = null;
@@ -25,33 +24,6 @@
     if (chapterMeta?.mode === 'chapter-workspace') {
       throw new Error('章ワークスペース中はシリーズや作品を切り替えられません。先にマスター作品ZIPを開いて通常モードへ戻してください。');
     }
-  }
-
-  async function showSeriesScreen() {
-    try {
-      await assertFullWorkMode();
-      $('tab-series').classList.add('active');
-      $('tab-series').setAttribute('aria-selected', 'true');
-      $('screen-series').hidden = false;
-      $('sidebar').hidden = true;
-      document.querySelector('.integrated-workspace')?.classList.add('series-mode');
-      for (const name of existingTabs) {
-        $(`tab-${name}`).classList.remove('active');
-        $(`tab-${name}`).setAttribute('aria-selected', 'false');
-        $(`screen-${name}`).hidden = true;
-      }
-      await render();
-    } catch (error) {
-      toast(error?.message || String(error));
-    }
-  }
-
-  function leaveSeriesScreen() {
-    $('tab-series').classList.remove('active');
-    $('tab-series').setAttribute('aria-selected', 'false');
-    $('screen-series').hidden = true;
-    $('sidebar').hidden = false;
-    document.querySelector('.integrated-workspace')?.classList.remove('series-mode');
   }
 
   async function waitForEditorIdle() {
@@ -99,12 +71,12 @@
     else await render();
   }
 
-  function workCard(work, isActive, canDelete) {
+  function workCard(work, isActive, canDelete, canManage) {
     const card = document.createElement('article');
     card.className = `series-work-card${isActive ? ' active' : ''}`;
     const body = document.createElement('div');
     body.className = 'series-work-copy';
-    const title = document.createElement('h3');
+    const title = document.createElement('h4');
     title.textContent = work.title || '無題の作品';
     const summary = document.createElement('p');
     summary.textContent = work.summary || '概要はまだありません。';
@@ -121,6 +93,7 @@
       open.type = 'button';
       open.className = 'primary';
       open.textContent = '開く';
+      open.disabled = !canManage;
       open.addEventListener('click', () => void selectWork(work.id).catch(error => toast(error.message)));
       actions.append(open);
     }
@@ -128,11 +101,20 @@
     remove.type = 'button';
     remove.className = 'quiet danger';
     remove.textContent = '削除';
-    remove.disabled = !canDelete;
+    remove.disabled = !canManage || !canDelete;
     remove.addEventListener('click', () => void deleteWork(work).catch(error => toast(error.message)));
     actions.append(remove);
     card.append(body, actions);
     return card;
+  }
+
+  function setManagementAvailability(canManage, message = '') {
+    $('series-title').disabled = !canManage;
+    $('series-summary').disabled = !canManage;
+    $('series-add-work').disabled = !canManage;
+    const note = $('series-mode-note');
+    note.hidden = canManage || !message;
+    note.textContent = canManage ? '' : message;
   }
 
   async function render() {
@@ -141,17 +123,34 @@
     if (!activeMeta) return;
     activeSeries = await root.NovelStorage.getSeries(store, activeMeta.activeSeriesId);
     if (!activeSeries) return;
+
+    let canManage = true;
+    let modeMessage = '';
+    try {
+      await assertFullWorkMode();
+    } catch (error) {
+      canManage = false;
+      modeMessage = error?.message || String(error);
+    }
+
     $('series-title').value = activeSeries.title || '';
     $('series-summary').value = activeSeries.summary || '';
+    setManagementAvailability(canManage, modeMessage);
+
     const works = await root.NovelStorage.listWorks(store, activeSeries.id);
     const container = $('series-works');
-    container.replaceChildren(...works.map(work => workCard(work, work.id === activeMeta.activeWorkId, works.length > 1)));
+    container.replaceChildren(...works.map(work => workCard(
+      work,
+      work.id === activeMeta.activeWorkId,
+      works.length > 1,
+      canManage
+    )));
   }
 
   function scheduleSeriesSave() {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
-      if (!activeSeries) return;
+      if (!activeSeries || $('series-title').disabled) return;
       void root.NovelStorage.updateSeries(db, activeSeries.id, {
         title: $('series-title').value,
         summary: $('series-summary').value
@@ -159,9 +158,16 @@
     }, 350);
   }
 
-  $('tab-series').addEventListener('click', () => void showSeriesScreen());
-  for (const name of existingTabs) $(`tab-${name}`).addEventListener('click', leaveSeriesScreen, true);
+  function renderIfPlotActive() {
+    if ($('tab-plot')?.getAttribute('aria-selected') !== 'true') return;
+    void render().catch(error => toast(error?.message || String(error)));
+  }
+
+  $('tab-plot').addEventListener('click', renderIfPlotActive);
   $('series-title').addEventListener('input', scheduleSeriesSave);
   $('series-summary').addEventListener('input', scheduleSeriesSave);
   $('series-add-work').addEventListener('click', () => void createWork().catch(error => toast(error.message)));
+  root.NovelWorkspace?.subscribe(event => {
+    if (event?.reason === 'screen') renderIfPlotActive();
+  });
 })(globalThis);
