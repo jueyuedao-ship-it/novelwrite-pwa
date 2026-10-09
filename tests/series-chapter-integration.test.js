@@ -120,3 +120,11 @@ test('script order composes Series storage before chapter-workspace storage and 
   const app = html.indexOf('<script src="./app.js"></script>');
   assert.ok(storage < series && series < schema && schema < chapterStorage && chapterStorage < app);
 });
+
+test('series UI blocks work switching while chapter-workspace metadata is active', () => {
+  const seriesUi = read('series.js');
+  assert.match(seriesUi, /loadWorkspaceMeta/);
+  assert.match(seriesUi, /chapter-workspace/);
+  assert.match(seriesUi, /章ワークスペース中はシリーズや作品を切り替えられません/);
+  assert.match(seriesUi, /await assertFullWorkMode\(\)/);
+});
