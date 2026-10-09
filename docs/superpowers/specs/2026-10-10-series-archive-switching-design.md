@@ -5,39 +5,41 @@ Date: 2026-10-10
 
 ## 1. Purpose
 
-文机の最上位操作単位を「作品」ではなく「シリーズ」に揃える。
+文机の最上位操作単位を「作品」から「シリーズ」へ揃える。
 
-現在のアプリは IndexedDB 上で `Series -> Work` の階層を持ち、プロット画面内で同一シリーズの作品を切り替えられる。一方、上部ツールバーには従来の単一作品モデル由来の「作品を開く」「ZIPで保存」「新しい作品」が残っており、ユーザーが操作する階層と保存モデルが一致していない。
+現在の保存モデルは `Series -> Work` だが、上部ツールバーには単一作品モデル由来の「作品を開く」「ZIPで保存」「新しい作品」が残っている。本変更では、上部ツールバーをSeries単位の操作へ変更し、Work単位の操作はプロット画面内の「シリーズ設定」へ集約する。
 
-この変更では次を実現する。
+実現する内容:
 
-1. 上部の切替操作を「シリーズを切り替える」にする。
-2. 上部のバックアップ操作を「シリーズZIPで保存」にし、現在のシリーズに属する全作品を1つのZIPへ保存する。
-3. 上部の新規作成を「新しいシリーズ」にする。
-4. シリーズ内の作品追加・作品切替・作品削除は、引き続きプロット画面内の「シリーズ設定」で行う。
-5. 既存の作品ZIP形式は変更せず、互換機能として残す。
+1. 上部の「作品を開く」を「シリーズを切り替える」に変更する。
+2. 上部の「ZIPで保存」を「シリーズZIPで保存」に変更し、active Series配下の全Workを1つのZIPへ保存する。
+3. 上部の「新しい作品」を「新しいシリーズ」に変更する。
+4. Series内のWork追加・Work切替・Work削除・単体Workファイル操作はプロット画面内に残す。
+5. 既存の作品ZIP `fumizukue-work-archive v1` と章ZIPは変更しない。
 
 ## 2. Non-goals
 
-今回の実装範囲には以下を含めない。
+今回の実装には以下を含めない。
 
 - シリーズZIPからのインポート・復元
-- シリーズ間での作品移動
-- シリーズ削除
-- Seriesをまたいだ共有キャラクター、共有舞台、共有タイムライン
-- 既存の作品ZIPフォーマット `fumizukue-work-archive` の変更
-- 章ZIPフォーマットの変更
-- IndexedDBの全データ再構成
+- Series削除
+- Series間のWork移動
+- WorkのSeries内並べ替え
+- Series共有キャラクター・舞台・タイムライン
+- 既存作品ZIP形式の変更
+- 章ZIP形式の変更
+- destructiveなIndexedDB migration
 
-シリーズZIPの読み込みは、書き出し形式と実運用が安定した後の別変更として扱う。
+シリーズZIP importは別フェーズとする。
 
 ## 3. Current State
 
-現在の保存層には以下が既に存在する。
+現在の保存層には以下がある。
 
 - `series` object store
 - `works.seriesId`
-- `workspaceMeta/current` の `activeSeriesId` / `activeWorkId`
+- `workspaceMeta/current.activeSeriesId`
+- `workspaceMeta/current.activeWorkId`
 - `NovelStorage.listSeries()`
 - `NovelStorage.getSeries()`
 - `NovelStorage.createSeries()`
@@ -45,27 +47,27 @@ Date: 2026-10-10
 - `NovelStorage.createWorkInSeries()`
 - `NovelStorage.setActiveWorkspace()`
 
-したがって複数Seriesを保持するための新しいobject storeは不要である。
+したがって、複数Seriesを保持するための新しいobject storeは不要。
 
-現在のUIでは、プロット画面内のシリーズ設定から同一Series内のWorkを選択できる。上部の「作品を開く」は外部の作品ZIP/旧JSONを現在のWorkへ置き換える用途であり、「ZIPで保存」は現在のWorkのみを書き出す。
+現在のプロット画面では、同一Series内のWorkを追加・切替・削除できる。上部の「作品を開く」は外部Work ZIP/旧JSONをactive Workへ置換する操作で、「ZIPで保存」はactive Workのみを書き出す。
 
 ## 4. UX Model
 
 ### 4.1 Top bar
 
-上部ツールバーを次の責務へ変更する。
-
 | Current | New | Responsibility |
 | --- | --- | --- |
-| 作品を開く | シリーズを切り替える | 端末内に保存済みのSeriesを選択する |
-| ZIPで保存 | シリーズZIPで保存 | active Series配下の全Workをバックアップする |
-| 新しい作品 | 新しいシリーズ | 新規Seriesと最初の空Workを作成する |
+| 作品を開く | シリーズを切り替える | 端末内に保存済みのSeriesを選択 |
+| ZIPで保存 | シリーズZIPで保存 | active Series配下の全Workを一括バックアップ |
+| 新しい作品 | 新しいシリーズ | 新規Series + 最初の空Workを作成 |
 
-「章ZIPを開く」は既存の章ワークスペース機能として維持する。
+「章ZIPを開く」は既存機能として維持する。
 
-### 4.2 Plot > Series settings
+### 4.2 Plot > シリーズ設定
 
-プロット画面内のシリーズ設定は、Series内部を管理する場所として維持する。
+ここをWork単位の管理場所とする。
+
+表示・操作:
 
 - シリーズ名
 - シリーズ概要
@@ -73,27 +75,29 @@ Date: 2026-10-10
 - `＋ 新しい作品`
 - 各作品の `開く`
 - 各作品の `削除`
-- `作品ZIPを開く`
+- `現在の作品ZIPで保存`
+- `作品ZIP / 旧JSONを開く`
 
-既存の外部作品ZIP/旧JSON読込は、上部からここへ移動する。読み込んだ作品は現在のSeriesのactive Workを置き換える既存挙動を維持する。
+これにより、上部をSeries単位へ変更しても既存の単体Work ZIP入出力をUIから失わない。
 
 ### 4.3 Series switch dialog
 
-「シリーズを切り替える」を押すと、端末内のSeries一覧をダイアログで表示する。
+「シリーズを切り替える」で端末内のSeries一覧を表示する。
 
-各行には以下を表示する。
+各行:
 
 - Series title
 - Work count
-- active Series badge または `開く` ボタン
+- active Seriesなら `現在のシリーズ`
+- 非active Seriesなら `開く`
 
-ダイアログ下部に `＋ 新しいシリーズ` を置いてもよいが、上部ツールバーの同操作と同じ関数を呼ぶだけとする。
+ダイアログ下部に `＋ 新しいシリーズ` を置いてよい。上部の「新しいシリーズ」と同じ処理を呼ぶ。
 
-章ワークスペース中はSeries切替、新規Series作成、作品ZIP置換を禁止する。既存のfull-work mode guardを再利用する。
+章ワークスペース中はSeries切替・新規Series・Work切替・Work追加・Work置換を禁止する。
 
 ## 5. Remembering the Last Work per Series
 
-Seriesを切り替えたとき、そのSeriesで最後に開いていたWorkへ戻れるようにする。
+Seriesへ戻ったとき、そのSeriesで最後に開いていたWorkへ復帰する。
 
 `Series` レコードへ任意フィールドを追加する。
 
@@ -102,60 +106,67 @@ Series
   id
   title
   summary
-  lastActiveWorkId?   // optional
+  lastActiveWorkId?
   createdAt
   updatedAt
 ```
 
-IndexedDBのkeyPathやindexは変更しないため、DB version bumpは不要である。
+keyPath/index変更はないためDB version bumpは不要。
 
-### Rules
+Rules:
 
-- Series内でWorkを開いたら、そのSeriesの `lastActiveWorkId` を更新する。
-- 別Seriesへ切り替える直前にも現在の `activeWorkId` を現在Seriesへ記録する。
-- Series切替時は、`lastActiveWorkId` がそのSeriesに現在も属していればそのWorkを開く。
-- 無効・欠損・削除済みなら、そのSeriesの先頭Workへフォールバックする。
-- Seriesには最低1 Workを保持する。既存の「最後の1作品は削除不可」を維持する。
+- Series内でWorkを開くたびに、対象Seriesの `lastActiveWorkId` を更新する。
+- 別Seriesへ切り替える直前にも現在Seriesのactive Workを記録する。
+- `lastActiveWorkId` が対象Seriesにまだ属していればそれを開く。
+- 欠損・削除済みなら、対象SeriesのWorkを `id` 昇順に並べた先頭へフォールバックする。
+- Seriesには常に最低1 Workを保持する。既存の「最後の1作品は削除不可」を維持する。
 
-保存層には `setActiveSeries(db, seriesId)` 相当のAPIを追加し、Work解決と `workspaceMeta/current` 更新を1つの責務にまとめる。
+保存層に `setActiveSeries(db, seriesId)` を追加し、Work解決・Series memory更新・`workspaceMeta/current` 更新をまとめる。
+
+`setActiveWorkspace(db, seriesId, workId)` もtarget Seriesの `lastActiveWorkId` を同じtransactionで更新する。
 
 ## 6. Creating a New Series
 
-上部の「新しいシリーズ」は以下を原子的なユーザー操作として扱う。
+新規Series作成は保存層の `createSeriesWithInitialWork()` で原子的に実施する。
 
-1. 現在のWorkのpending save完了を待つ。
-2. full-work modeであることを確認する。
-3. 新しい `Series` を作成する。
-4. `NovelModel.createWork()` で空Workを1つ作成する。
-5. `createWorkInSeries()` でSeriesへ保存する。
-6. Seriesの `lastActiveWorkId` と `workspaceMeta/current` を新Workへ設定する。
-7. ページをreloadして新Seriesを表示する。
+```text
+createSeriesWithInitialWork(db, seriesValues, rawWorkPackage)
+  -> { series, workspaceMeta }
+```
 
-途中で失敗した場合、可能な限り孤立Seriesを残さない。保存層にSeries+初期Workをまとめた `createSeriesWithInitialWork()` を追加するか、失敗時に作成済みSeriesをロールバックする。
+処理:
 
-実装計画時に、IndexedDB transactionで一括化できる範囲を優先する。
+1. `Series` recordを生成する。
+2. `NovelModel.createWork()` で作成した空Work packageを検証する。
+3. 既存 `baseStorage.saveWork()` の保存transactionをSeries-aware proxyで拡張する。
+4. 同一transaction内でSeries record、Work本体、関連stores、`workspaceMeta/current` を保存する。
+5. Seriesの `lastActiveWorkId` を初期Work IDに設定する。
+
+Work保存が失敗した場合はtransaction全体をabortし、zero-Work Seriesを残さない。
+
+UI側では操作前に現在Workのpending save完了とfull-work modeを確認する。新規Series作成は既存Seriesを破壊しないため、destructive確認は不要。
 
 ## 7. Series ZIP Format
 
-### 7.1 Format identity
-
-新しいアーカイブ形式を追加する。
+### 7.1 Identity
 
 ```text
 format: fumizukue-series-archive
 formatVersion: 1
 ```
 
-既存作品ZIPは変更しない。
+既存:
 
 ```text
 fumizukue-work-archive v1
 ```
 
-### 7.2 Archive layout
+は変更しない。
+
+### 7.2 Layout
 
 ```text
-<series-name>.zip
+<series-title>.series.zip
 ├─ manifest.json
 └─ works/
    ├─ 0001.zip
@@ -163,13 +174,11 @@ fumizukue-work-archive v1
    └─ 0003.zip
 ```
 
-各 `works/*.zip` は既存 `NovelArchive.exportArchive()` が生成する `fumizukue-work-archive v1` をそのまま格納する。
+各 `works/*.zip` は既存 `NovelArchive.exportArchive()` が生成するWork ZIPそのもの。
 
-これによりSeries ZIPは作品ZIPのラッパーとなり、WorkレベルのZIP仕様を重複実装しない。
+Series ZIPはWork ZIPのwrapperとし、WorkレベルのJSON/画像仕様を重複実装しない。
 
 ### 7.3 manifest.json
-
-概念構造:
 
 ```json
 {
@@ -192,110 +201,103 @@ fumizukue-work-archive v1
 }
 ```
 
-`lastActiveWorkId` は端末ローカルの操作状態として扱い、アーカイブ上は `activeWorkId` として保存する。将来Series ZIP importを追加する際、そのSeriesの初期active Work候補として使用できる。
+`lastActiveWorkId` はローカル操作状態なのでarchiveには直接保存せず、`activeWorkId` を将来import時の初期候補として保存する。
 
-### 7.4 Ordering
+### 7.4 Work ordering
 
-作品ZIPの格納順は、現状 `Work` にSeries内orderフィールドがないため、安定した決定順を使う。
+Series ZIP内のWork順は **Work IDの昇順** とする。
 
-優先順位:
+理由:
 
-1. `works` object store / `listWorks()` から得る既存順を明示的に安定化
-2. titleではなくWork ID等の不変値をtie-breakerに使用
+- 現行WorkモデルにSeries内orderがない。
+- title順はrenameで変化する。
+- Work IDなら同一データ集合から毎回同じarchive layoutを生成できる。
 
-ただしユーザーが明示的に作品順を並べ替える機能は今回導入しない。
+UIのSeries内並べ替えは今回導入しない。
 
 ### 7.5 Export flow
 
-Series ZIP保存は以下の順序で行う。
-
-1. 入力composition・画像load・pending saveが完了するまで待つ。
-2. active Seriesと配下Work一覧を取得する。
-3. 各Workを `NovelStorage.loadWork(db, workId)` で完全ロードする。
-4. 各Workを既存 `NovelArchive.exportArchive()` で作品ZIP化する。
-5. 各作品ZIPのSHA-256を計算する。
-6. `manifest.json` を生成する。
-7. `archive-common.js` のZIP writerでSeries ZIPを作成する。
-8. `<series title>.fumizukue-series.zip` に相当する識別しやすい名前でdownloadする。
-
-ファイル拡張子は既存ブラウザ互換を優先し `.zip` とし、ファイル名中に `series` を含める。
-
-例:
-
-```text
-星海シリーズ.series.zip
-```
+1. composition・画像load・pending saveの完了を待つ。
+2. full-work modeを確認する。
+3. active Seriesを取得する。
+4. Series配下WorkをID昇順で取得する。
+5. 各Workを `NovelStorage.loadWork(db, workId)` で完全ロードする。
+6. 各Workを既存 `NovelArchive.exportArchive()` でZIP化する。
+7. nested ZIP bytesのSHA-256を計算する。
+8. manifestを生成する。
+9. `NovelArchiveCommon.assertUncompressedBudget()` でouter archive payloadを検証する。
+10. `NovelArchiveCommon.writeArchive()` でSeries ZIPを生成する。
+11. `<series title>.series.zip` としてdownloadする。
 
 ## 8. Archive Safety
 
-Series ZIPでも既存ZIPと同等の安全制約を適用する。
+Series ZIPでも既存archive安全制約を利用する。
 
-- 各nested work ZIPのbytesを生成後、Series ZIP全体のuncompressed budgetを確認する。
-- path traversalを許さない固定パスのみ生成する。
-- duplicate entry namesを許さない。
-- `manifest.json` のWork ID重複を許さない。
-- Work ZIPのhashをmanifestへ記録する。
-- 作品ZIP生成時の既存画像サイズ・形式・checksum検証をそのまま再利用する。
+- nested Work ZIPは既存Work ZIP validator/export pathを通す。
+- outer ZIPは固定pathだけを生成する。
+- duplicate pathを禁止する。
+- manifest内Work ID重複を禁止する。
+- 各nested Work ZIP hashをmanifestへ保存する。
+- missing image/blobが1件でもあれば全Series exportをabortする。
+- outer archiveのuncompressed budgetを検証する。
+- partial downloadはしない。
 
-Series ZIP importは今回実装しないため、読み込み側のpreflightは次フェーズで設計する。
+Series ZIP importを実装しないため、外部Series ZIPのpreflight/read pathは今回追加しない。
 
 ## 9. Module Boundaries
 
-### New
-
-`series-archive.js`
+### New: `series-archive.js`
 
 Responsibilities:
 
-- `exportSeriesArchive({ series, works })`
+- `exportSeriesArchive({ series, activeWorkId, works })`
 - existing `NovelArchive.exportArchive()` composition
-- Series manifest generation
-- SHA-256 generation through `NovelArchiveCommon`
+- deterministic Work ordering
+- manifest generation
+- nested ZIP SHA-256
 - outer ZIP assembly
 
-Series archive moduleは遅延ロードする。通常編集時にZIP codecを追加ロードしない。
+ZIP codecは通常編集時にロードせず、Series ZIP操作時にlazy-loadする。
 
-### Existing files
+### `series-storage.js`
 
-`series-storage.js`
-
-- `lastActiveWorkId` handling
+- `lastActiveWorkId`
 - `setActiveSeries()`
-- atomic or rollback-safe Series + initial Work creation helper
-- existing multi-Work semantics remain unchanged
+- `setActiveWorkspace()` memory update
+- `createSeriesWithInitialWork()` atomic creation
+- existing multi-Work isolation remains unchanged
 
-`series.js`
+### `series.js`
 
-- Series switch dialog population / selection
-- new Series action integration if UI ownership is placed here
-- Work switch updates `lastActiveWorkId`
-- Plot内 `作品ZIPを開く` integration
+- Series chooser UI
+- Series switch
+- New Series
+- Plot内Work switch/add/delete
+- Plot内Work ZIP export/import controls
 
-`app.js`
+### `app.js`
 
-- topbar button behavior changes
-- Series ZIP export orchestration
-- current Work pending-save flush before series-level operations
-- existing Work ZIP import handler exposed/reused by Plot Series UI rather than removed
+- topbar Series controls
+- pending-save flush shared helper
+- Series ZIP export orchestration entry point
+- current Work ZIP import/export handlers reusable from `series.js`
 
-`index.html`
+### `index.html`
 
-- labels and controls
-- Series switch dialog container if existing generic dialog is insufficient
-- Plot Series settings `作品ZIPを開く`
+- topbar labels
+- Series switch dialog/container
+- Plot Series settingsのWork archive controls
 
-`series.css` / `styles.css`
+### `series.css` / `styles.css`
 
-- Series chooser styling
+- chooser and archive control styling
 
-`sw.js`
+### `sw.js`
 
-- cache generation bump
-- precache `series-archive.js` only if required by current app-shell policy; otherwise dynamic import remains network/cache managed consistently with `archive.js`
+- app-shell cache generation bump
+- new runtime asset handling
 
-## 10. API Direction
-
-Storage APIs should evolve toward:
+## 10. Storage API Direction
 
 ```text
 listSeries(db)
@@ -307,7 +309,7 @@ setActiveSeries(db, seriesId)
 createSeriesWithInitialWork(db, seriesValues, rawWorkPackage)
 ```
 
-`setActiveSeries()` returns the resolved workspace metadata:
+`setActiveSeries()` returns:
 
 ```text
 {
@@ -317,149 +319,150 @@ createSeriesWithInitialWork(db, seriesValues, rawWorkPackage)
 }
 ```
 
-`setActiveWorkspace()` should also update `Series.lastActiveWorkId` for the targetSeries, so callers cannot accidentally create inconsistent state.
+`setActiveSeries()` must reject a Series with zero valid Works rather than silently activating an invalid workspace.
 
-## 11. Existing Work ZIP Compatibility
+## 11. Work ZIP Compatibility
 
-Existing `NovelArchive.exportArchive()` / `importArchive()` remain valid and tested.
+既存 `NovelArchive.exportArchive()` / `importArchive()` は変更しない。
 
-After this change:
+After change:
 
 - topbar primary export = Series ZIP
-- Plot > Series settings = `作品ZIPを開く`
-- existing Work ZIP import still replaces only the active Work within the active Series
-- existing Work ZIP schema does not gain `seriesId`
-- Series association remains a local container concern, not embedded into standalone Work ZIP
+- Plot > Series settings = `現在の作品ZIPで保存`
+- Plot > Series settings = `作品ZIP / 旧JSONを開く`
+- Work ZIP importはactive Series内のactive Workだけを置換する
+- Work ZIPへ`seriesId`は追加しない
 
-This separation allows a Work ZIP to be moved into another Series without rewriting the archive format.
+Series associationはlocal container concernのままにする。これにより単体Work ZIPを別Seriesへ持ち込める互換性を維持する。
 
 ## 12. Chapter Workspace Interaction
 
-Chapter workspace remains scoped to one Work.
-
-While chapter-workspace metadata is active:
+章ワークスペース中は以下を固定する。
 
 - Series switch: disabled
 - New Series: disabled
 - Work switch: disabled
 - New Work: disabled
 - Work ZIP import: disabled
+- Work ZIP export: existing chapter/full-work policyに従う
 - Series metadata editing: read-only
-- Series ZIP export: allowed only if all Series Work data can be read safely without mutating workspace state; otherwise disabled for Phase 1 implementation
+- **Series ZIP export: disabled**
 
-Implementation should prefer disabling Series ZIP export during chapter-workspace mode unless tests demonstrate that loading sibling Work packages has no side effects. This is safer than exporting a potentially stale or partial active Work.
+Series ZIPはactive Workを含む全Workの完全バックアップを意味するため、部分的なchapter workspace状態からは作成しない。
 
 ## 13. Failure Handling
 
-### Series switching
+### Series switch
 
-- current save failure -> do not switch
-- target Series missing -> show error and keep current Series
-- target Series has no Work -> reject or repair before UI switch
-- remembered Work missing -> fallback to first valid Work
-
-### Series ZIP export
-
-- any Work fails full load -> abort entire export
-- any nested Work ZIP generation fails -> abort entire export
-- checksum failure/impossible payload -> abort entire export
-- no partial ZIP download
+- current save failure -> switchしない
+- target Series missing -> current Series維持
+- target Series has zero Work -> reject
+- remembered Work missing -> target SeriesのWork ID昇順先頭へfallback
 
 ### New Series
 
-- initial Work creation fails -> do not activate new Series
-- avoid leaving a zero-Work Series
+- Series/initial Work transaction failure -> 何も作成しない
+- active workspace更新失敗 -> transaction abort
+
+### Series ZIP
+
+- any Work full-load failure -> export全体abort
+- nested Work ZIP failure -> export全体abort
+- checksum/hash generation failure -> export全体abort
+- budget exceeded -> export全体abort
+- no partial download
 
 ## 14. Migration and Backward Compatibility
 
-No mandatory IndexedDB version bump is required because:
+DB version bumpは不要。
 
-- `series` store already exists
-- `Series.lastActiveWorkId` is an optional property
-- `works.seriesId` already exists
-- `workspaceMeta/current` already carries active Series and Work
+理由:
 
-On first use after upgrade:
+- `series` storeは既存
+- `works.seriesId`は既存
+- `workspaceMeta/current`は既存
+- `lastActiveWorkId`はoptional property
 
-- if `lastActiveWorkId` is absent, use current `activeWorkId` when it belongs to the Series
-- otherwise use first Work
-- persist `lastActiveWorkId` lazily when a Work or Series is next selected
+既存Seriesに`lastActiveWorkId`がない場合:
 
-Existing v4/v5/v6 migrations remain unchanged.
+1. current workspaceのactive WorkがそのSeriesに属していれば使用
+2. それ以外はWork ID昇順先頭を使用
+3. 次回選択時にlazy persist
+
+既存v4/v5/v6 migration codeは変更しない。
 
 ## 15. Tests
 
 ### Storage
 
-- multiple Series coexist
-- `setActiveSeries()` switches to target Series
-- `setActiveSeries()` restores `lastActiveWorkId`
-- missing `lastActiveWorkId` falls back to a valid Work
-- deleting remembered Work does not break later Series switch
-- `setActiveWorkspace()` updates target Series memory
-- new Series always receives one initial Work
-- failure during initial Work creation does not leave unusable active state
+- 2 Series coexist
+- `setActiveSeries()` switches Series
+- remembered Work restoration
+- missing remembered Work fallback
+- deleting remembered Work does not break switch
+- `setActiveWorkspace()` updates `lastActiveWorkId`
+- `createSeriesWithInitialWork()` creates exactly one Series + one Work
+- initial Work save failure leaves no Series
 
 ### Series archive
 
-- two-Work Series exports one outer ZIP containing two valid existing Work ZIPs
-- manifest format/version/Series metadata is correct
-- each nested ZIP hash matches manifest
-- Work IDs are unique
-- missing image/blob in any Work aborts entire export
-- uncompressed budget covers nested ZIP payloads
-- existing Work ZIP round-trip tests remain unchanged
+- 2 Work Series -> outer ZIP with 2 nested valid Work ZIPs
+- Work ID sort is deterministic
+- manifest format/version/Series metadata/activeWorkId correct
+- nested ZIP hashes match
+- duplicate Work IDs rejected
+- missing image/blob aborts entire export
+- budget overflow rejected
+- existing Work ZIP tests unchanged
 
 ### UI
 
-- topbar no longer says `作品を開く`
 - topbar contains `シリーズを切り替える`
-- topbar primary export says `シリーズZIPで保存`
-- topbar reset says `新しいシリーズ`
-- Plot Series settings contains `作品ZIPを開く`
-- Series chooser lists all stored Series and Work counts
-- switching Series preserves Series-internal last Work
-- chapter workspace blocks Series switching/new Series
+- topbar no longer exposes old `作品を開く` behavior
+- primary export is `シリーズZIPで保存`
+- reset action is `新しいシリーズ`
+- Plot contains `現在の作品ZIPで保存`
+- Plot contains `作品ZIP / 旧JSONを開く`
+- chooser lists every stored Series and Work count
+- switch restores last Work
+- chapter workspace disables Series-level controls
 
 ### Regression
 
-- current Work autosave
-- Work ZIP import
+- autosave
+- Work ZIP export/import
 - chapter ZIP export/import
 - v4 -> v6 migration
 - v5 -> v6 chapter workspace migration
 - multi-Work isolation
-- Work revision conflict detection
-- PWA cache/update tests
+- revision conflict detection
+- PWA cache/update
 
 ## 16. Acceptance Criteria
 
-The change is complete when all of the following are true.
-
-1. User can keep at least two Series in IndexedDB and switch between them from the top bar.
-2. Returning to a Series reopens the Work most recently used in that Series when still valid.
-3. User can create a new Series from the top bar; it immediately contains one editable blank Work.
-4. User can save the active Series as one ZIP containing every Work in that Series.
-5. Each nested Work archive is byte-valid according to the existing Work archive implementation.
-6. Current Work ZIP import remains available from Plot > Series settings.
-7. Series-internal Work switching remains in Plot > Series settings.
-8. Existing Work ZIP and chapter ZIP formats are unchanged.
-9. Existing user databases require no destructive migration.
-10. Full automated regression suite and syntax checks pass before merge.
+1. 端末内に2つ以上のSeriesを保持し、上部UIから切り替えられる。
+2. Seriesへ戻ると、そのSeriesで最後に開いていた有効なWorkへ戻る。
+3. 新しいSeriesを作ると、必ず1つの編集可能な空Workを持つ。
+4. active Seriesを1つのZIPとして保存でき、そのSeriesの全Workが含まれる。
+5. nested Work ZIPは既存Work ZIP実装で有効な形式である。
+6. 単体Work ZIP export/importと旧JSON importをPlotから引き続き利用できる。
+7. Series内Work切替はPlotのシリーズ設定に残る。
+8. Work ZIP/章ZIP形式は変更されない。
+9. destructive migration不要。
+10. full regression、syntax checks、PR CI、post-merge CIを通過してから完了とする。
 
 ## 17. Rollout
 
-Implementation will be developed on a feature branch from current `main` using TDD.
+実装はcurrent `main`からfeature branchを作りTDDで行う。
 
-Release sequence:
-
-1. storage behavior tests RED/GREEN
-2. Series archive tests RED/GREEN
-3. UI contract tests RED/GREEN
-4. full regression suite
+1. storage RED/GREEN
+2. Series archive RED/GREEN
+3. UI RED/GREEN
+4. full regression
 5. latest-main integration
 6. PR CI
 7. merge to `main`
-8. post-merge CI and GitHub Pages deployment verification
+8. post-merge CI
+9. GitHub Pages deployment確認
 
-No direct write to `main` before the release gate.
+release gate前に`main`へ直接書き込まない。
