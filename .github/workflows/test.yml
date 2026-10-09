@@ -16,9 +16,10 @@ jobs:
       - run: npm install --ignore-scripts
       - run: npm test
       - run: node --check series-storage.js
-        if: hashFiles('series-storage.js') != ''
+      - run: node --check series-schema.js
+      - run: node --check workspace-storage.js
       - run: node --check series.js
-        if: hashFiles('series.js') != ''
       - run: node --check storage.js
       - run: node --check app.js
+      - run: node --check chapter-workspace-controller.js
       - run: node --check workspace-loader.js
