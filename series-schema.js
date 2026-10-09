@@ -9,6 +9,8 @@
   if (!base || typeof base.openStore !== 'function') throw new Error('Series保存モジュールを先に読み込んでください。');
 
   const originalOpenStore = base.openStore.bind(base);
+  const originalSaveWork = base.saveWork.bind(base);
+  const originalCreateWorkInSeries = base.createWorkInSeries.bind(base);
 
   function requestPromise(request) {
     return new Promise((resolve, reject) => {
@@ -23,6 +25,42 @@
       tx.onabort = () => reject(tx.error || new Error('IndexedDBトランザクションに失敗しました。'));
       tx.onerror = () => { /* onabort reports the final error */ };
     });
+  }
+
+  function collectPackageIds(rawPackage) {
+    const ids = new Set();
+    const add = value => {
+      if (typeof value === 'string' && value) ids.add(value);
+    };
+    const work = rawPackage?.work;
+    if (!work || typeof work !== 'object') return ids;
+    add(work.id);
+    for (const chapter of work.chapters || []) add(chapter?.id);
+    for (const episode of work.episodes || []) {
+      add(episode?.id);
+      for (const line of episode?.lines || []) add(line?.id);
+    }
+    for (const scene of work.scenes || []) add(scene?.id);
+    for (const character of work.characters || []) {
+      add(character?.id);
+      for (const field of character?.customFields || []) add(field?.id);
+    }
+    for (const image of work.images || []) add(image?.id);
+    for (const image of rawPackage?.images || []) {
+      add(image?.id);
+      add(image?.metadata?.id);
+    }
+    return ids;
+  }
+
+  async function assertNoForeignIdCollisions(store, rawPackage, excludedWorkId = null) {
+    const ids = collectPackageIds(rawPackage);
+    if (!ids.size) return;
+    const tx = store.transaction(['idRegistry'], 'readonly');
+    const rowsPromise = requestPromise(tx.objectStore('idRegistry').getAll());
+    const [rows] = await Promise.all([rowsPromise, transactionPromise(tx)]);
+    const conflict = rows.find(row => row?.workId !== excludedWorkId && ids.has(row?.globalId));
+    if (conflict) throw new Error(`別作品で使用中のIDがあります: ${conflict.globalId}`);
   }
 
   function inspect(factory, name) {
@@ -111,8 +149,21 @@
     return originalOpenStore({ ...options, indexedDB: factory, name });
   }
 
+  async function saveWork(store, rawPackage) {
+    const current = typeof base.getWorkspaceMeta === 'function' ? await base.getWorkspaceMeta(store) : null;
+    await assertNoForeignIdCollisions(store, rawPackage, current?.activeWorkId || null);
+    return originalSaveWork(store, rawPackage);
+  }
+
+  async function createWorkInSeries(store, seriesId, rawPackage) {
+    await assertNoForeignIdCollisions(store, rawPackage, null);
+    return originalCreateWorkInSeries(store, seriesId, rawPackage);
+  }
+
   root.NovelStorage = Object.assign({}, base, {
     openStore,
+    saveWork,
+    createWorkInSeries,
     SERIES_DATABASE_VERSION: DATABASE_VERSION
   });
 })(globalThis);
