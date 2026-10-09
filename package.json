@@ -1,0 +1,10 @@
+{
+  "name": "fumizukue-novelwrite-pwa",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/*.test.js"
+  },
+  "devDependencies": {
+    "fake-indexeddb": "6.2.5"
+  }
+}
