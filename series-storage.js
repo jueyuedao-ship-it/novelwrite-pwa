@@ -59,6 +59,20 @@
       };
     }
 
+    async function snapshotWorkKeys(db, workId) {
+      const tx = db.transaction(BASE_STORE_NAMES, 'readonly');
+      const done = transactionPromise(tx);
+      const entries = BASE_STORE_NAMES.map(async name => {
+        const store = tx.objectStore(name);
+        if (name === 'works') return [name, (await requestPromise(store.get(workId))) ? [workId] : []];
+        if (!store.indexNames.contains('workId')) throw new Error(`${name} にworkIdインデックスがありません。`);
+        return [name, await requestPromise(store.index('workId').getAllKeys(workId))];
+      });
+      const values = await Promise.all(entries);
+      await done;
+      return new Map(values);
+    }
+
     function makeTransactionProxy(db, names, mode, scope) {
       const requested = Array.isArray(names) ? names : [names];
       const expanded = new Set(requested);
@@ -79,7 +93,11 @@
                 return (...args) => syntheticFilteredRequest(target.getAll(...args), record => belongsToWork(name, record, scope.workId));
               }
               if (property === 'clear') {
-                return () => deleteRowsForWork(name, target, scope.workId);
+                return () => {
+                  const keys = scope.clearKeys?.get(name);
+                  if (!keys) throw new Error('作品置換用の削除キーが準備されていません。');
+                  keys.forEach(key => target.delete(key));
+                };
               }
               if (name === 'works' && property === 'put') {
                 return (record, ...args) => {
@@ -151,6 +169,7 @@
         activateOnSave: false,
         seriesRecord: null,
         savedWorkId: null,
+        clearKeys: null,
         seeded: false
       };
       scope.proxy = createScopedDatabase(db, scope);
@@ -424,6 +443,7 @@
         scope.seriesId = initial.seriesId;
         scope.seriesRecord = initial.seriesRecord;
       }
+      scope.clearKeys = oldWorkId ? await snapshotWorkKeys(db, oldWorkId) : new Map(BASE_STORE_NAMES.map(name => [name, []]));
       scope.activateOnSave = true;
       try {
         const result = await baseStorage.saveWork(scope.proxy, validated);
@@ -434,6 +454,7 @@
       } finally {
         scope.activateOnSave = false;
         scope.seriesRecord = null;
+        scope.clearKeys = null;
       }
     }
 
@@ -444,6 +465,7 @@
       if (await getWorkRecord(db, validated.work.id)) throw new Error('同じ作品IDの作品がすでにあります。');
       const scope = await getScope(db, validated.work.id);
       scope.seriesId = seriesId;
+      scope.clearKeys = new Map(BASE_STORE_NAMES.map(name => [name, []]));
       scope.activateOnSave = true;
       try {
         const result = await baseStorage.saveWork(scope.proxy, validated);
@@ -451,6 +473,7 @@
         return result;
       } finally {
         scope.activateOnSave = false;
+        scope.clearKeys = null;
       }
     }
 
