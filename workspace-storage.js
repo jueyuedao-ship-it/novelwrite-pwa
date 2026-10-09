@@ -1,11 +1,9 @@
-/* Phase 1 storage adapter: upgrades the existing database and adds chapter-workspace metadata. */
+/* Chapter-workspace metadata adapter composed on top of the Series storage layer. */
 (function (root) {
   'use strict';
 
   const base = root.NovelStorage;
   const workspaceMode = root.NovelWorkspaceMode;
-  const DATABASE_NAME = 'fumizukue-integrated-work';
-  const DATABASE_VERSION = 5;
   const META_STORE = 'workspaceMeta';
   if (!base) throw new Error('NovelStorageを先に読み込んでください。');
   if (!workspaceMode) throw new Error('NovelWorkspaceModeを先に読み込んでください。');
@@ -28,47 +26,8 @@
     });
   }
 
-  function inspectVersion(factory, name) {
-    return new Promise((resolve, reject) => {
-      const request = factory.open(name);
-      request.onupgradeneeded = () => { /* A new empty database may be created at v1; storage v4 will initialize it next. */ };
-      request.onerror = () => reject(request.error || new Error('作品データベースを確認できません。'));
-      request.onblocked = () => reject(new Error('別の画面が作品データベースを使用中です。'));
-      request.onsuccess = () => {
-        const db = request.result;
-        const version = db.version;
-        db.close();
-        resolve(version);
-      };
-    });
-  }
-
-  function addWorkspaceStore(factory, name) {
-    return new Promise((resolve, reject) => {
-      const request = factory.open(name, DATABASE_VERSION);
-      request.onupgradeneeded = () => {
-        const db = request.result;
-        if (!db.objectStoreNames.contains(META_STORE)) db.createObjectStore(META_STORE, { keyPath: 'id' });
-      };
-      request.onerror = () => reject(request.error || new Error('章ワークスペース保存領域を作成できません。'));
-      request.onblocked = () => reject(new Error('別の画面が作品データベースを使用中です。'));
-      request.onsuccess = () => { request.result.close(); resolve(); };
-    });
-  }
-
   async function openStore(options = {}) {
-    const factory = options.indexedDB || root.indexedDB;
-    const name = options.name || DATABASE_NAME;
-    if (!factory || typeof factory.open !== 'function') throw new Error('IndexedDBを利用できません。');
-    let version = await inspectVersion(factory, name);
-    if (version < 4) {
-      const initialized = await originalOpenStore({ ...options, indexedDB: factory, name, version: 4 });
-      initialized.close();
-      version = 4;
-    }
-    if (version < DATABASE_VERSION) await addWorkspaceStore(factory, name);
-    if (version > DATABASE_VERSION) throw new Error('このアプリより新しい作品データベースです。');
-    return originalOpenStore({ ...options, indexedDB: factory, name, version: DATABASE_VERSION });
+    return originalOpenStore(options);
   }
 
   function loadWorkspaceMeta(store) {
@@ -77,14 +36,14 @@
     return Promise.all([result, transactionPromise(tx)]).then(([row]) => workspaceMode.normalizeWorkspaceMeta(row || null));
   }
 
-  function loadWorkRevision(store) {
+  async function loadWorkRevision(store) {
+    const current = typeof base.getWorkspaceMeta === 'function' ? await base.getWorkspaceMeta(store) : null;
+    if (!current?.activeWorkId) return 0;
     const tx = store.transaction(['works'], 'readonly');
-    const result = requestPromise(tx.objectStore('works').getAll());
-    return Promise.all([result, transactionPromise(tx)]).then(([rows]) => {
-      if (rows.length > 1) throw new Error('複数の作品が保存されています。');
-      const revision = rows.length ? rows[0]._revision : 0;
-      return Number.isSafeInteger(revision) && revision >= 0 ? revision : 0;
-    });
+    const rowPromise = requestPromise(tx.objectStore('works').get(current.activeWorkId));
+    const [row] = await Promise.all([rowPromise, transactionPromise(tx)]);
+    const revision = row?._revision || 0;
+    return Number.isSafeInteger(revision) && revision >= 0 ? revision : 0;
   }
 
   async function writeWorkspaceMeta(store, rawMeta) {
@@ -121,7 +80,7 @@
           await originalSaveWork(store, previousPackage);
           await writeWorkspaceMeta(store, previousMeta);
         }
-      } catch { /* Keep the original error; caller will surface it and current data remains recoverable from ZIP. */ }
+      } catch { /* Keep the original error; caller surfaces it and ZIP remains the recovery path. */ }
       throw error;
     }
   }

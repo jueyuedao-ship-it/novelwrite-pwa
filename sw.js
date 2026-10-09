@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'fumizukue-chapter-workspace-v1';
+const CACHE_NAME = 'fumizukue-series-chapter-v1';
 const SCOPE = self.registration.scope;
 const SCOPE_URL = new URL(SCOPE);
 const shellUrl = path => new URL(path, SCOPE).href;
@@ -10,6 +10,7 @@ const APP_SHELL = [
   './index.html',
   './styles.css',
   './chapter-workspace.css',
+  './series.css',
   './model.js',
   './core.js',
   './editor-state.js',
@@ -17,6 +18,8 @@ const APP_SHELL = [
   './package.js',
   './workspace-mode.js',
   './storage.js',
+  './series-storage.js',
+  './series-schema.js',
   './workspace-storage.js',
   './images.js',
   './archive-common.js',
@@ -28,6 +31,7 @@ const APP_SHELL = [
   './plot-overview.js',
   './characters.js',
   './app.js',
+  './series.js',
   './chapter-workspace-controller.js',
   './workspace-loader.js',
   './pwa.js',
