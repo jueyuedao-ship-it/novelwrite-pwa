@@ -16,14 +16,18 @@ test('index loads the series storage layer before app and the series UI after ap
   assert.ok(app < series, 'series.js must initialize after NovelWorkspace exists');
 });
 
-test('index exposes a Series tab and panel', () => {
+test('index exposes Series settings inside the Plot panel without a Series tab', () => {
   const html = read('index.html');
-  assert.match(html, /id="tab-series"/);
-  assert.match(html, /id="screen-series"/);
-  assert.match(html, /id="series-title"/);
-  assert.match(html, /id="series-summary"/);
-  assert.match(html, /id="series-works"/);
-  assert.match(html, /id="series-add-work"/);
+  const plotStart = html.indexOf('id="screen-plot"');
+  const charactersStart = html.indexOf('id="screen-characters"');
+  const plot = html.slice(plotStart, charactersStart);
+  assert.doesNotMatch(html, /id="tab-series"/);
+  assert.doesNotMatch(html, /id="screen-series"/);
+  assert.match(plot, /id="series-settings-panel"/);
+  assert.match(plot, /id="series-title"/);
+  assert.match(plot, /id="series-summary"/);
+  assert.match(plot, /id="series-works"/);
+  assert.match(plot, /id="series-add-work"/);
 });
 
 test('service worker precaches all Series UI assets', () => {
