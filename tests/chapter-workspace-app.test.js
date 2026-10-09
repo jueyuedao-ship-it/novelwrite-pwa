@@ -35,3 +35,11 @@ test('chapter mode Ctrl/Cmd+S routes to chapter export', () => {
   assert.match(code, /event\.stopImmediatePropagation\(\)/);
   assert.match(code, /exportChapter\(workspaceMeta\.loadedChapterIds\[0\]\)/);
 });
+
+test('chapter file operations track composition and image loads before export/import', () => {
+  const code = read('chapter-workspace-controller.js');
+  assert.match(code, /operationImageLoads/);
+  assert.match(code, /compositionDepth/);
+  assert.match(code, /beginImageLoad\(\)/);
+  assert.match(code, /入力・画像の読み込みが終わってから/);
+});
