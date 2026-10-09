@@ -30,9 +30,10 @@ test('index exposes Series settings inside the Plot panel without a Series tab',
   assert.match(plot, /id="series-add-work"/);
 });
 
-test('service worker precaches all Series UI assets', () => {
+test('service worker precaches all Series UI and archive assets', () => {
   const sw = read('sw.js');
   assert.match(sw, /series-storage\.js/);
   assert.match(sw, /series\.js/);
   assert.match(sw, /series\.css/);
+  assert.match(sw, /series-archive\.js/);
 });
