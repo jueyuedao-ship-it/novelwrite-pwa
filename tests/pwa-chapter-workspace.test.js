@@ -4,10 +4,14 @@ const fs = require('node:fs');
 const path = require('node:path');
 const read = name => fs.readFileSync(path.join(__dirname, '..', name), 'utf8');
 
-test('service worker caches every chapter-workspace runtime asset under a new cache version', () => {
+test('service worker caches every chapter and series workspace runtime asset under the combined cache version', () => {
   const sw = read('sw.js');
-  assert.match(sw, /fumizukue-chapter-workspace-v1/);
-  for (const asset of ['chapter-workspace.css', 'workspace-mode.js', 'workspace-storage.js', 'archive-common.js', 'chapter-bundle.js', 'chapter-archive.js', 'chapter-workspace-controller.js']) {
+  assert.match(sw, /fumizukue-series-chapter-v1/);
+  for (const asset of [
+    'chapter-workspace.css', 'workspace-mode.js', 'workspace-storage.js', 'archive-common.js',
+    'chapter-bundle.js', 'chapter-archive.js', 'chapter-workspace-controller.js',
+    'series.css', 'series-storage.js', 'series-schema.js', 'series.js'
+  ]) {
     assert.ok(sw.includes(`./${asset}`), `${asset} must be cached`);
   }
 });
