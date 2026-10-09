@@ -59,7 +59,7 @@ Series
   updatedAt: string
 ```
 
-`id` はSeries内で永続的に安定する。
+`id` はワークスペース内で永続的に安定する。
 
 初期実装ではSeriesの並べ替えや複数Series管理UIは必須としない。DB構造としては複数Seriesを保持できるようにするが、UIはまず現在Seriesを中心にする。
 
@@ -131,11 +131,13 @@ DB versionを現在の4から次バージョンへ上げる。
 
 Workが1件の場合:
 
-- Series IDは移行時に生成する。
+- Series IDは `series:migrated:<workId>` のように既存Work IDから決定的に生成する。
 - Series titleはWork titleを初期値とする。
 - Series summaryは空文字とする。
 - Work recordへ `seriesId` を追加する。
 - `activeSeriesId` と `activeWorkId` をその値へ設定する。
+
+決定的なIDを使うことで、アップグレード処理が途中で再試行されても不要なSeriesを増殖させない。
 
 Workが0件の場合はアップグレード時点ではSeriesを作らず、通常のboot初期化時に新規Series + 新規Workを原子的に作る。
 
@@ -145,6 +147,7 @@ Workが0件の場合はアップグレード時点ではSeriesを作らず、通
 
 その場合は全Workを削除せず、**1つの移行Seriesへまとめて所属**させる。
 
+- Series IDは先頭Work IDから決定的に生成する。
 - Series title: `移行されたシリーズ`
 - activeWorkId: 先頭のWork
 
@@ -164,9 +167,9 @@ WeakMap<IDBDatabase, Map<workId, revision>>
 
 ### Rules
 
-- `loadWorkIndex(workId)` / `loadWork(workId)` 実行時に、そのWorkの現在revisionをキャッシュする。
+- `loadWorkIndex(store, workId)` / `loadWork(store, workId)` 実行時に、そのWorkの現在revisionをキャッシュする。
 - `saveChanges()` は `changes.workId` に対応するrevisionだけを比較する。
-- `saveWork(workId)` も対象Workだけのrevisionを更新する。
+- `saveWork()` も対象Workだけのrevisionを更新する。
 - 別Workの保存は現在Workのexpected revisionへ影響しない。
 
 これにより複数タブ競合検出の意味を維持したまま、Work間の誤検出を防ぐ。
@@ -184,6 +187,7 @@ updateSeries(store, seriesId, changes)
 listWorks(store, seriesId)
 createWorkInSeries(store, seriesId, rawPackage?)
 deleteWork(store, workId)
+replaceWork(store, targetWorkId, rawPackage)
 
 getWorkspaceMeta(store)
 setActiveWorkspace(store, seriesId, workId)
@@ -231,17 +235,32 @@ ZIP保存などで現在Workの完全Packageを構築するときに使用する
 
 `saveWork()` は全ストア `clear()` を廃止する。
 
-対象Workを置換するときは、同一トランザクション内で以下を行う。
+`rawPackage.work.id` を保存対象Work IDとして扱い、同じIDの既存WorkがあればそのWorkだけを置換する。新規IDならSeriesを明示して新規Workとして保存する。
 
-1. 対象 `workId` の既存子レコードを取得・削除する。
+同一IDのWorkを置換するときは、同一トランザクション内で以下を行う。
+
+1. 対象 `workId` の既存子レコードを削除する。
 2. 対象Workの `works` recordを更新する。
 3. 新Packageの子レコードを書き込む。
 4. 他Workのレコードには触れない。
-5. Workの `seriesId` は既存所属を保持する。
+5. Workの既存 `seriesId` を保持する。
 
-新規Work作成時はSeries IDを明示して保存する。
+### 7.5 `replaceWork`
 
-### 7.5 `saveChanges`
+ZIP importなど、**現在WorkのIDとimport PackageのWork IDが異なる置換**は `saveWork()` に暗黙処理させず、専用 `replaceWork(store, targetWorkId, rawPackage)` で行う。
+
+1トランザクション内で:
+
+1. targetWorkIdが所属するSeries IDを取得する。
+2. targetWorkId配下の全レコードを削除する。
+3. rawPackage.work.idが別Workとして既に存在しないことを検証する。
+4. imported Workを同じSeries IDで保存する。
+5. `workspaceMeta.activeWorkId` がtargetWorkIdならimported Work IDへ更新する。
+6. revision cacheも旧IDを破棄し、新IDへ切り替える。
+
+途中失敗時は旧Workを残し、半端な置換状態を作らない。
+
+### 7.6 `saveChanges`
 
 現在すでに `changes.workId` が必須なので基本構造を維持する。
 
@@ -274,8 +293,8 @@ ZIP保存などで現在Workの完全Packageを構築するときに使用する
 ### Safety Rules
 
 - 現在Seriesの最後の1作品は削除不可。
-- activeWorkIdを削除する場合、削除前または同一トランザクション内で次のWorkをactiveにする。
-- 画像BlobやepisodeBodiesなど、直接 `workId` indexがない場合は必要に応じてindex追加または関連ID経由で安全に削除する。
+- activeWorkIdを削除する場合、同一トランザクションで次のWorkをactiveへ切り替える。
+- 既存の `workId` indexを使って子レコードを削除し、必要なindexが不足している場合のみDB migrationで追加する。
 - Series自体の削除UIは今回実装しない。
 
 ## 9. Application Boot Flow
@@ -298,7 +317,7 @@ openStore()
 
 優先順位:
 
-1. workspaceMeta.activeWorkIdが有効なら使用
+1. workspaceMeta.activeWorkIdが有効で、そのWorkがactiveSeriesIdに所属するなら使用
 2. activeSeries内の先頭Work
 3. 任意のSeriesの先頭Work
 4. データがなければ新規作成
@@ -350,12 +369,14 @@ openStore()
 1. compositionや画像読込中なら切替をブロックする。
 2. 現在のpending changesをflushする。
 3. 保存失敗時は切替しない。
-4. `setActiveWorkspace()` を更新する。
-5. `loadWorkIndex(targetWorkId)` を読む。
-6. 最初のEpisodeとSceneを読む。
+4. 対象Workの存在とSeries所属を検証する。
+5. `loadWorkIndex(targetWorkId)` と最初のEpisode/Sceneを読む。
+6. 読込成功後に `setActiveWorkspace()` を更新する。
 7. History / selection / activeScene / loaded imagesをリセットする。
 8. editor stateを対象Workへ差し替える。
 9. 各画面へworkspace変更通知を送る。
+
+`workspaceMeta` を先に更新して読込に失敗する状態を避ける。
 
 別Workへundo/redoが跨らないよう、Historyは完全に切る。
 
@@ -363,7 +384,7 @@ openStore()
 
 削除前に作品名を示した確認ダイアログを出す。
 
-現在開いているWorkを削除する場合は、別Workを選択してから削除処理を完了する。
+現在開いているWorkを削除する場合は、削除トランザクション内で別Workをactiveへ指定し、完了後にUIをそのWorkへ切り替える。
 
 最後の1作品では削除ボタンを無効化する。
 
@@ -383,9 +404,12 @@ Series metadataはZIPへ含めない。
 
 Series内へ新しい別Workとして追加する機能は今回実装しない。
 
+importは `replaceWork(db, activeWorkId, value)` を使用する。
+
 重要点:
 
-- importされたWork IDが現在Workと異なる場合でも、置換操作として現在Workを消した後に新Workを同じSeriesへ所属させる。
+- importされたWork IDが現在Workと異なる場合も、旧Work削除・新Work保存・activeWork更新を1トランザクションで行う。
+- importされたWork IDが同じSeries内の別Work IDと衝突する場合は置換せずエラーにする。
 - Series IDはZIP由来ではなく現在Seriesを引き継ぐ。
 - 既存確認文言は「現在の作品を置き換える」で維持する。
 
@@ -396,6 +420,8 @@ Series内へ新しい別Workとして追加する機能は今回実装しない�
 作品概要詳細などWork IDをキーとしてlocalStorageへ保存している機能は、Work IDが維持される限り引き続き作品単位で分離できる。
 
 Series切替によるlocalStorage全消去は行わない。
+
+ZIP importでWork IDが変わる置換では、旧Work IDに紐づくlocalStorage補助データは自動移植しない。import Packageに正式に含まれないデータを新Workへ誤帰属させないためである。
 
 将来的にSeries ZIPを追加するときは、これらのローカル補助データを正式な永続化契約へ移すことを別課題とする。
 
@@ -432,6 +458,8 @@ Series
 Chapter archiveの `sourceWorkId` はSeries導入後もWork IDを参照し続ける。
 
 Series Layer導入によって章ZIP形式を変更しない。
+
+Series Layerを先に実装する場合、Chapter Workspace側の保存APIは必ず明示的な `workId` を受け取る設計へ合わせる。
 
 ## 14. Error Handling and Recovery
 
@@ -477,7 +505,7 @@ IndexedDB migration自体はネットワーク接続に依存しない。
   - DB version更新
   - stores/index migration
   - Work単位revision
-  - Work-scoped load/save/delete
+  - Work-scoped load/save/delete/replace
   - Series/WorkspaceMeta APIs
 - `app.js`
   - activeSeries/work lifecycle
@@ -490,8 +518,6 @@ IndexedDB migration自体はネットワーク接続に依存しない。
   - Series screen/cards
 - `series.js` (new)
   - Series UI rendering and interactions
-- `workspace-loader.js`
-  - 必要ならWork ID明示ロードへ追従
 - `sw.js`
   - 新規JS cache
 
@@ -508,6 +534,7 @@ IndexedDB migration自体はネットワーク接続に依存しない。
 - 既存本文・人物・画像が不変
 - workspaceMetaが正しく設定される
 - 予期せぬ複数Work DBでもデータを削除しない
+- migration再試行でSeriesが重複作成されない
 
 ### Persistence Tests
 
@@ -516,12 +543,15 @@ IndexedDB migration自体はネットワーク接続に依存しない。
 - Bを削除してもAのデータが残る
 - `loadWork(A)` がBのbody/blobを孤立扱いしない
 - `saveWork(A)` がBのレコードを削除しない
+- `replaceWork(A, C)` がBを変更しない
+- replace途中失敗時にAが残る
 
 ### Revision Tests
 
 - AのrevisionとBのrevisionが独立
 - Aを別タブで競合更新すると従来通り検出
 - Bの更新はA保存の競合にならない
+- Work ID変更を伴うreplace後に旧revision cacheが残らない
 
 ### UI/Flow Tests
 
@@ -529,6 +559,7 @@ IndexedDB migration自体はネットワーク接続に依存しない。
 - Series画面に作品一覧が表示される
 - 新規作品作成後、その作品へ切替可能
 - Work A -> Work B -> Work Aで内容が保持される
+- 読込失敗時にactiveWorkIdだけ先行変更されない
 - 最後の1作品を削除できない
 - activeWork削除時に別Workへ安全に移る
 
@@ -538,6 +569,7 @@ IndexedDB migration自体はネットワーク接続に依存しない。
 - export ZIP内部形式が変わっていない
 - legacy migrationが引き続き機能する
 - plot/characters/manuscript各画面がWork切替後に正しいデータへ追従
+- Chapter archiveの `sourceWorkId` 契約が変わらない
 - Service Worker cacheにSeries UI資産が含まれる
 
 ## 18. Non-Goals for This Phase
@@ -571,11 +603,12 @@ DBはこれらを後から追加できる形にする。
 7. 既存作品ZIPの読み書き互換が維持される。
 8. PWAオフライン利用が維持される。
 9. 既存の章ワークスペース設計を破壊しない。
+10. Work IDが変わるZIP置換も原子的に完了する。
 
 ## 20. Recommended Implementation Order
 
 1. IndexedDB migration + Series/WorkspaceMeta stores
-2. Work単位revisionとWork-scoped read/write/delete
+2. Work単位revisionとWork-scoped read/write/delete/replace
 3. Storage APIテスト
 4. app bootをactiveWork対応へ変更
 5. Series UI追加
