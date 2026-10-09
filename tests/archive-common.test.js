@@ -36,9 +36,7 @@ function makeZip(entries, options = {}) {
 }
 const asFile = bytes => new Blob([bytes], { type: 'application/zip' });
 
-async function rejects(bytes, pattern) {
-  await assert.rejects(() => common.readArchive(asFile(bytes)), pattern);
-}
+async function rejects(bytes, pattern) { await assert.rejects(() => common.readArchive(asFile(bytes)), pattern); }
 
 test('writeArchive and readArchive round-trip manifest bytes', async () => {
   const blob = await common.writeArchive([{ name: 'manifest.json', bytes: new TextEncoder().encode(JSON.stringify({ format: 'x' })) }]);
@@ -67,10 +65,8 @@ test('preflight rejects ZIP64 sentinels and oversized expanded entries', async (
 test('preflight rejects expanded total over limit without inflating', async () => {
   const each = common.MAX_ENTRY_BYTES;
   await rejects(makeZip([
-    { name: 'a', uncompressedSize: each },
-    { name: 'b', uncompressedSize: each },
-    { name: 'c', uncompressedSize: each },
-    { name: 'd', uncompressedSize: each },
+    { name: 'a', uncompressedSize: each }, { name: 'b', uncompressedSize: each },
+    { name: 'c', uncompressedSize: each }, { name: 'd', uncompressedSize: each },
     { name: 'manifest.json', uncompressedSize: each }
   ]), /展開後/);
 });
@@ -84,4 +80,15 @@ test('writeArchive rejects duplicate names and oversized entries', async () => {
   await assert.rejects(() => common.writeArchive([{ name: 'a', bytes }, { name: 'a', bytes }]), /重複/);
   const tooBig = { byteLength: common.MAX_ENTRY_BYTES + 1 };
   await assert.rejects(() => common.writeArchive([{ name: 'a', bytes: tooBig }]), /Uint8Array|サイズ/);
+});
+
+test('assertUncompressedBudget rejects aggregate payloads before ZIP encoding', () => {
+  assert.equal(typeof common.assertUncompressedBudget, 'function');
+  assert.throws(() => common.assertUncompressedBudget([
+    { name: 'a', size: common.MAX_ENTRY_BYTES },
+    { name: 'b', size: common.MAX_ENTRY_BYTES },
+    { name: 'c', size: common.MAX_ENTRY_BYTES },
+    { name: 'd', size: common.MAX_ENTRY_BYTES },
+    { name: 'e', size: 1 }
+  ]), /展開後/);
 });
