@@ -60,3 +60,10 @@ test('chapter workspace controller preserves the Series export label outside cha
   const source = read('chapter-workspace-controller.js');
   assert.match(source, /chapterMode\s*\?\s*['"]章ZIPで保存\s*['"]\s*:\s*['"]シリーズZIPで保存\s*['"]/);
 });
+
+test('chapter workspace keeps a master work ZIP import path to return to full-work mode', () => {
+  const source = read('chapter-workspace-controller.js');
+  assert.match(source, /import-button/);
+  assert.match(source, /マスター作品ZIPを開く/);
+  assert.match(source, /importButton\.disabled\s*=\s*false/);
+});
