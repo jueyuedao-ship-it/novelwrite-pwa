@@ -1,4 +1,4 @@
-/* Series settings embedded in the plot screen. */
+/* Series settings embedded in the plot screen plus Series-level workspace actions. */
 (function (root) {
   'use strict';
 
@@ -7,10 +7,29 @@
   let activeSeries = null;
   let activeMeta = null;
   let saveTimer = null;
+  let chapterMode = false;
+  let workActionBypass = null;
+  let seriesArchivePromise = null;
+  let seriesOperation = false;
 
   function toast(message) {
     if (root.NovelWorkspace?.toast) root.NovelWorkspace.toast(message);
     else console.warn(message);
+  }
+
+  function filename(name) {
+    return (name || '無題').replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').replace(/[. ]+$/g, '').slice(0, 90) || '無題';
+  }
+
+  function download(blob, name) {
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = name;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
   }
 
   async function seriesDb() {
@@ -18,10 +37,18 @@
     return db;
   }
 
-  async function assertFullWorkMode() {
-    if (typeof root.NovelStorage.loadWorkspaceMeta !== 'function') return;
+  async function refreshChapterMode() {
+    if (typeof root.NovelStorage.loadWorkspaceMeta !== 'function') {
+      chapterMode = false;
+      return chapterMode;
+    }
     const chapterMeta = await root.NovelStorage.loadWorkspaceMeta(await seriesDb());
-    if (chapterMeta?.mode === 'chapter-workspace') {
+    chapterMode = chapterMeta?.mode === 'chapter-workspace';
+    return chapterMode;
+  }
+
+  async function assertFullWorkMode() {
+    if (await refreshChapterMode()) {
       throw new Error('章ワークスペース中はシリーズや作品を切り替えられません。先にマスター作品ZIPを開いて通常モードへ戻してください。');
     }
   }
@@ -32,10 +59,17 @@
     while (Date.now() < deadline) {
       const text = status?.textContent || '';
       if (/失敗|競合|保存でき/.test(text)) throw new Error(text || '現在の作品を保存できませんでした。');
-      if (!/保存中|保存待ち|未保存|起動しています/.test(text) && $('app').getAttribute('aria-busy') !== 'true') return;
+      if (!/保存中|保存待ち|未保存|起動しています/.test(text) && $('app')?.getAttribute('aria-busy') !== 'true') return;
       await new Promise(resolve => setTimeout(resolve, 80));
     }
     throw new Error('現在の作品の保存完了を確認できませんでした。');
+  }
+
+  async function withSeriesOperation(action) {
+    if (seriesOperation) return;
+    seriesOperation = true;
+    try { return await action(); }
+    finally { seriesOperation = false; }
   }
 
   async function selectWork(workId) {
@@ -69,6 +103,72 @@
     await root.NovelStorage.deleteWork(await seriesDb(), work.id);
     if (wasActive) location.reload();
     else await render();
+  }
+
+  async function switchSeries(seriesId) {
+    await withSeriesOperation(async () => {
+      await assertFullWorkMode();
+      await waitForEditorIdle();
+      await root.NovelStorage.setActiveSeries(await seriesDb(), seriesId);
+      location.reload();
+    });
+  }
+
+  async function createSeries() {
+    await withSeriesOperation(async () => {
+      await assertFullWorkMode();
+      await waitForEditorIdle();
+      const work = root.NovelModel.createWork();
+      await root.NovelStorage.createSeriesWithInitialWork(
+        await seriesDb(),
+        { title: '無題のシリーズ', summary: '' },
+        { work, images: [] }
+      );
+      location.reload();
+    });
+  }
+
+  async function loadSeriesArchiveModule() {
+    if (!seriesArchivePromise) {
+      seriesArchivePromise = import(new URL('./series-archive.js', location.href).href).then(() => {
+        if (!root.NovelSeriesArchive) throw new Error('シリーズZIP処理モジュールを読み込めませんでした。');
+        return root.NovelSeriesArchive;
+      }).catch(error => { seriesArchivePromise = null; throw error; });
+    }
+    return seriesArchivePromise;
+  }
+
+  async function exportSeries() {
+    await withSeriesOperation(async () => {
+      await assertFullWorkMode();
+      await waitForEditorIdle();
+      const store = await seriesDb();
+      const meta = await root.NovelStorage.getWorkspaceMeta(store);
+      if (!meta) throw new Error('現在のシリーズがありません。');
+      const series = await root.NovelStorage.getSeries(store, meta.activeSeriesId);
+      if (!series) throw new Error('現在のシリーズが見つかりません。');
+      const workRecords = await root.NovelStorage.listWorks(store, series.id);
+      const works = [];
+      for (const record of workRecords.slice().sort((a, b) => String(a.id).localeCompare(String(b.id)))) {
+        const value = await root.NovelStorage.loadWork(store, record.id);
+        if (!value) throw new Error(`作品「${record.title || record.id}」を読み込めませんでした。`);
+        works.push(value);
+      }
+      const archive = await loadSeriesArchiveModule();
+      const blob = await archive.exportSeriesArchive({ series, activeWorkId: meta.activeWorkId, works });
+      download(blob, `${filename(series.title)}.series.zip`);
+      toast('シリーズZIPのダウンロードを開始しました。保存先のファイルを確認してください。');
+    });
+  }
+
+  function invokeWorkAction(kind) {
+    if (chapterMode) return;
+    const id = kind === 'export' ? 'export-archive' : 'import-button';
+    const control = $(id);
+    if (!control) return;
+    workActionBypass = kind;
+    control.click();
+    queueMicrotask(() => { if (workActionBypass === kind) workActionBypass = null; });
   }
 
   function workCard(work, isActive, canDelete, canManage) {
@@ -108,10 +208,34 @@
     return card;
   }
 
+  function ensureWorkArchiveControls() {
+    if ($('series-export-work') && $('series-import-work')) return;
+    const heading = document.querySelector('#series-settings-panel .series-list-heading');
+    if (!heading) return;
+    const actions = document.createElement('div');
+    actions.className = 'series-archive-actions';
+    const exportButton = document.createElement('button');
+    exportButton.id = 'series-export-work';
+    exportButton.type = 'button';
+    exportButton.className = 'quiet';
+    exportButton.textContent = '現在の作品ZIPで保存';
+    exportButton.addEventListener('click', () => invokeWorkAction('export'));
+    const importButton = document.createElement('button');
+    importButton.id = 'series-import-work';
+    importButton.type = 'button';
+    importButton.className = 'quiet';
+    importButton.textContent = '作品ZIP / 旧JSONを開く';
+    importButton.addEventListener('click', () => invokeWorkAction('import'));
+    actions.append(exportButton, importButton);
+    heading.append(actions);
+  }
+
   function setManagementAvailability(canManage, message = '') {
     $('series-title').disabled = !canManage;
     $('series-summary').disabled = !canManage;
     $('series-add-work').disabled = !canManage;
+    if ($('series-export-work')) $('series-export-work').disabled = !canManage;
+    if ($('series-import-work')) $('series-import-work').disabled = !canManage;
     const note = $('series-mode-note');
     note.hidden = canManage || !message;
     note.textContent = canManage ? '' : message;
@@ -126,13 +250,10 @@
 
     let canManage = true;
     let modeMessage = '';
-    try {
-      await assertFullWorkMode();
-    } catch (error) {
-      canManage = false;
-      modeMessage = error?.message || String(error);
-    }
+    try { await assertFullWorkMode(); }
+    catch (error) { canManage = false; modeMessage = error?.message || String(error); }
 
+    ensureWorkArchiveControls();
     $('series-title').value = activeSeries.title || '';
     $('series-summary').value = activeSeries.summary || '';
     setManagementAvailability(canManage, modeMessage);
@@ -158,16 +279,148 @@
     }, 350);
   }
 
+  function ensureSeriesSwitchDialog() {
+    let dialog = $('series-switch-dialog');
+    if (dialog) return dialog;
+    dialog = document.createElement('dialog');
+    dialog.id = 'series-switch-dialog';
+    dialog.className = 'series-switch-dialog';
+    dialog.setAttribute('aria-labelledby', 'series-switch-title');
+    const heading = document.createElement('div');
+    heading.className = 'series-switch-heading';
+    const title = document.createElement('h2');
+    title.id = 'series-switch-title';
+    title.textContent = 'シリーズを切り替える';
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'quiet';
+    close.textContent = '閉じる';
+    close.addEventListener('click', () => dialog.close());
+    heading.append(title, close);
+    const list = document.createElement('div');
+    list.id = 'series-switch-list';
+    list.className = 'series-switch-list';
+    const add = document.createElement('button');
+    add.id = 'series-switch-add';
+    add.type = 'button';
+    add.className = 'primary';
+    add.textContent = '＋ 新しいシリーズ';
+    add.addEventListener('click', () => { dialog.close(); void createSeries().catch(error => toast(error.message)); });
+    dialog.append(heading, list, add);
+    $('app')?.append(dialog);
+    return dialog;
+  }
+
+  async function openSeriesChooser() {
+    await assertFullWorkMode();
+    const store = await seriesDb();
+    const current = await root.NovelStorage.getWorkspaceMeta(store);
+    const series = await root.NovelStorage.listSeries(store);
+    const dialog = ensureSeriesSwitchDialog();
+    const list = $('series-switch-list');
+    const rows = [];
+    for (const item of series) {
+      const works = await root.NovelStorage.listWorks(store, item.id);
+      const row = document.createElement('div');
+      row.className = `series-switch-row${item.id === current?.activeSeriesId ? ' active' : ''}`;
+      const copy = document.createElement('div');
+      const title = document.createElement('strong');
+      title.textContent = item.title || '無題のシリーズ';
+      const meta = document.createElement('small');
+      meta.textContent = `${works.length}作品`;
+      copy.append(title, meta);
+      row.append(copy);
+      if (item.id === current?.activeSeriesId) {
+        const badge = document.createElement('span');
+        badge.className = 'series-active-badge';
+        badge.textContent = '現在のシリーズ';
+        row.append(badge);
+      } else {
+        const open = document.createElement('button');
+        open.type = 'button';
+        open.className = 'primary';
+        open.textContent = '開く';
+        open.addEventListener('click', () => { dialog.close(); void switchSeries(item.id).catch(error => toast(error.message)); });
+        row.append(open);
+      }
+      rows.push(row);
+    }
+    list.replaceChildren(...rows);
+    dialog.showModal();
+  }
+
+  function setTopbarLabels() {
+    const switchButton = $('import-button');
+    const resetButton = $('reset');
+    const exportButton = $('export-archive');
+    if (switchButton) {
+      switchButton.textContent = 'シリーズを切り替える';
+      switchButton.disabled = chapterMode;
+    }
+    if (resetButton) {
+      resetButton.textContent = '新しいシリーズ';
+      resetButton.disabled = chapterMode;
+    }
+    if (exportButton && !chapterMode && exportButton.textContent.trim() !== 'シリーズZIPで保存 ↗') {
+      exportButton.textContent = 'シリーズZIPで保存 ↗';
+    }
+  }
+
+  async function refreshTopbarMode() {
+    try { await refreshChapterMode(); }
+    catch { chapterMode = false; }
+    setTopbarLabels();
+    if ($('tab-plot')?.getAttribute('aria-selected') === 'true') void render().catch(error => toast(error.message));
+  }
+
   function renderIfPlotActive() {
     if ($('tab-plot')?.getAttribute('aria-selected') !== 'true') return;
     void render().catch(error => toast(error?.message || String(error)));
   }
 
-  $('tab-plot').addEventListener('click', renderIfPlotActive);
-  $('series-title').addEventListener('input', scheduleSeriesSave);
-  $('series-summary').addEventListener('input', scheduleSeriesSave);
-  $('series-add-work').addEventListener('click', () => void createWork().catch(error => toast(error.message)));
+  function interceptTopbar() {
+    $('import-button')?.addEventListener('click', event => {
+      if (workActionBypass === 'import') { workActionBypass = null; return; }
+      if (chapterMode) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void openSeriesChooser().catch(error => toast(error.message));
+    }, { capture: true });
+
+    $('export-archive')?.addEventListener('click', event => {
+      if (workActionBypass === 'export') { workActionBypass = null; return; }
+      if (chapterMode) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void exportSeries().catch(error => toast(`シリーズZIPを書き出せませんでした：${error.message}`));
+    }, { capture: true });
+
+    $('reset')?.addEventListener('click', event => {
+      if (chapterMode) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void createSeries().catch(error => toast(error.message));
+    }, { capture: true });
+
+    document.addEventListener('keydown', event => {
+      if (chapterMode || event.isComposing || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void exportSeries().catch(error => toast(`シリーズZIPを書き出せませんでした：${error.message}`));
+    }, { capture: true });
+  }
+
+  ensureSeriesSwitchDialog();
+  ensureWorkArchiveControls();
+  interceptTopbar();
+  setTopbarLabels();
+  $('tab-plot')?.addEventListener('click', renderIfPlotActive);
+  $('series-title')?.addEventListener('input', scheduleSeriesSave);
+  $('series-summary')?.addEventListener('input', scheduleSeriesSave);
+  $('series-add-work')?.addEventListener('click', () => void createWork().catch(error => toast(error.message)));
   root.NovelWorkspace?.subscribe(event => {
     if (event?.reason === 'screen') renderIfPlotActive();
   });
+  void refreshTopbarMode();
+  setTimeout(() => void refreshTopbarMode(), 0);
 })(globalThis);
