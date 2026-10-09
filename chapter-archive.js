@@ -50,6 +50,10 @@
       entries.push({ name, bytes });
     }
 
+    common.assertUncompressedBudget([
+      ...entries.map(entry => ({ name: entry.name, size: entry.bytes.length })),
+      ...bundle.images.map(image => ({ name: image.name || image.id, size: image.blob.size }))
+    ]);
     const counters = { scene: 0, character: 0 };
     const sceneImageHashes = {};
     const imageManifest = [];
