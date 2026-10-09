@@ -66,12 +66,14 @@ test('full-work/null metadata does not restrict patches', () => {
   assert.doesNotThrow(() => mode.assertPatchAllowed(null, { workId: 'work-1', work: { title: 'x' } }, currentState()));
 });
 
-test('workspace storage adapter upgrades the database to version 5 and exposes metadata APIs', () => {
+test('workspace storage adapter composes chapter metadata with the Series storage layer', () => {
   const storage = fs.readFileSync(require.resolve('../workspace-storage.js'), 'utf8');
-  assert.match(storage, /DATABASE_VERSION\s*=\s*5/);
+  const schema = fs.readFileSync(require.resolve('../series-schema.js'), 'utf8');
+  assert.match(schema, /DATABASE_VERSION\s*=\s*6/);
   assert.match(storage, /['"]workspaceMeta['"]/);
   assert.match(storage, /function loadWorkspaceMeta\(/);
   assert.match(storage, /async function saveChapterWorkspace\(/);
-  assert.match(storage, /function loadWorkRevision\(/);
+  assert.match(storage, /async function loadWorkRevision\(/);
+  assert.match(storage, /getWorkspaceMeta/);
   assert.match(storage, /NovelStorage/);
 });
