@@ -33,6 +33,7 @@
       const request = factory.open(name);
       request.onupgradeneeded = () => { /* A new empty database may be created at v1; storage v4 will initialize it next. */ };
       request.onerror = () => reject(request.error || new Error('作品データベースを確認できません。'));
+      request.onblocked = () => reject(new Error('別の画面が作品データベースを使用中です。'));
       request.onsuccess = () => {
         const db = request.result;
         const version = db.version;
