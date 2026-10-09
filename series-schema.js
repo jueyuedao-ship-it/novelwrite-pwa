@@ -11,6 +11,7 @@
   const originalOpenStore = base.openStore.bind(base);
   const originalSaveWork = base.saveWork.bind(base);
   const originalCreateWorkInSeries = base.createWorkInSeries.bind(base);
+  const originalCreateSeriesWithInitialWork = base.createSeriesWithInitialWork?.bind(base);
 
   function requestPromise(request) {
     return new Promise((resolve, reject) => {
@@ -160,10 +161,17 @@
     return originalCreateWorkInSeries(store, seriesId, rawPackage);
   }
 
+  async function createSeriesWithInitialWork(store, seriesValues, rawPackage) {
+    if (typeof originalCreateSeriesWithInitialWork !== 'function') throw new Error('新しいシリーズを作成できません。');
+    await assertNoForeignIdCollisions(store, rawPackage, null);
+    return originalCreateSeriesWithInitialWork(store, seriesValues, rawPackage);
+  }
+
   root.NovelStorage = Object.assign({}, base, {
     openStore,
     saveWork,
     createWorkInSeries,
+    createSeriesWithInitialWork,
     SERIES_DATABASE_VERSION: DATABASE_VERSION
   });
 })(globalThis);

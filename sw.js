@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'fumizukue-series-chapter-v4';
+const CACHE_NAME = 'fumizukue-series-chapter-v5';
 const SCOPE = self.registration.scope;
 const SCOPE_URL = new URL(SCOPE);
 const shellUrl = path => new URL(path, SCOPE).href;
@@ -24,6 +24,7 @@ const APP_SHELL = [
   './images.js',
   './archive-common.js',
   './archive.js',
+  './series-archive.js',
   './chapter-bundle.js',
   './chapter-archive.js',
   './vendor/fflate.mjs',

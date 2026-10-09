@@ -29,10 +29,10 @@
       <div class="file-actions integrated-actions">
         <span class="local-badge"><i></i> 端末内で保存</span>
         <span id="save-status" role="status" aria-live="polite">起動しています…</span>
-        <button id="import-button" type="button">作品を開く</button>
+        <button id="import-button" type="button">シリーズを切り替える</button>
         <button id="import-chapter-button" type="button">章ZIPを開く</button>
-        <button id="export-archive" type="button" class="primary">ZIPで保存 <span aria-hidden="true">↗</span></button>
-        <button id="reset" type="button" class="quiet">新しい作品</button>
+        <button id="export-archive" type="button" class="primary">シリーズZIPで保存 <span aria-hidden="true">↗</span></button>
+        <button id="reset" type="button" class="quiet">新しいシリーズ</button>
       </div>
       <input id="import-file" type="file" accept=".json,application/json,.zip,application/zip" hidden>
       <input id="import-chapter-file" type="file" accept=".zip,application/zip" hidden>
@@ -47,7 +47,7 @@
         <div class="sidebar-heading"><h2>話の一覧</h2><button id="add-episode" class="icon-button" type="button" aria-label="話を追加">＋</button></div>
         <nav id="episodes" aria-label="話を選択"></nav>
         <button id="load-sample" type="button" class="sample-button">サンプル作品を開く <span aria-hidden="true">→</span></button>
-        <details class="help"><summary>使い方・保存について</summary><p>本文は上の全文欄からも、下の行ごとの欄からも編集できます。本文は自動で端末内へ保存されます。</p><p>ZIPで保存すると、作品情報・本文・プロット・キャラクター・画像をひとつのファイルにまとめます。章ZIPは特定の章だけを軽量な作業パックとして保存できます。</p><p>Ctrl / ⌘ + Z：元に戻す<br>Ctrl / ⌘ + Shift + Z：やり直し<br>Ctrl / ⌘ + S：現在のモードのZIPで保存</p></details>
+        <details class="help"><summary>使い方・保存について</summary><p>本文は上の全文欄からも、下の行ごとの欄からも編集できます。本文は自動で端末内へ保存されます。</p><p>シリーズZIPは現在のシリーズ内の全作品をまとめて保存します。単体作品ZIPの保存・読み込みはプロットの「シリーズ設定」から、章ZIPは特定の章だけを軽量な作業パックとして保存できます。</p><p>Ctrl / ⌘ + Z：元に戻す<br>Ctrl / ⌘ + Shift + Z：やり直し<br>Ctrl / ⌘ + S：通常モードではシリーズZIP、章ワークスペースでは章ZIPを保存</p></details>
         <div class="sidebar-note"><span class="eyebrow">A PLACE FOR YOUR STORY</span><p>文章と、その向こうの情景を。<br>ひとつの机で、少しずつ。</p></div>
       </aside>
       <main id="main" data-ready="false">
