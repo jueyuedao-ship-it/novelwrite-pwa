@@ -39,6 +39,8 @@ test('clean browser runtime boots and renders the Series screen', async () => {
   Object.defineProperty(window, 'IDBKeyRange', { value: IDBKeyRange, configurable: true });
   window.structuredClone = structuredClone;
   window.confirm = () => true;
+  window.CSS ||= {};
+  window.CSS.escape ||= value => String(value);
   window.HTMLElement.prototype.scrollIntoView = function () {};
   if (window.HTMLDialogElement) {
     window.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
