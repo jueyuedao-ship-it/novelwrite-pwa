@@ -13,12 +13,14 @@
   <link rel="icon" href="./icons/icon-192.png" sizes="192x192">
   <link rel="apple-touch-icon" href="./icons/icon-192.png">
   <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./series.css">
 </head>
 <body>
   <div id="app" aria-busy="true">
     <header class="topbar integrated-topbar">
       <a class="brand" href="#main"><span class="brand-mark" aria-hidden="true">文</span><span>文机<small>FUMIZUKUE · NOVEL DESK</small></span></a>
       <nav class="screen-nav" role="tablist" aria-label="作品画面">
+        <button id="tab-series" type="button" role="tab" aria-controls="screen-series" aria-selected="false">シリーズ</button>
         <button id="tab-manuscript" type="button" role="tab" aria-controls="screen-manuscript" aria-selected="true" class="active">本文</button>
         <button id="tab-plot" type="button" role="tab" aria-controls="screen-plot" aria-selected="false">プロット</button>
         <button id="tab-characters" type="button" role="tab" aria-controls="screen-characters" aria-selected="false">キャラクター</button>
@@ -45,6 +47,17 @@
         <div class="sidebar-note"><span class="eyebrow">A PLACE FOR YOUR STORY</span><p>文章と、その向こうの情景を。<br>ひとつの机で、少しずつ。</p></div>
       </aside>
       <main id="main" data-ready="false">
+        <section id="screen-series" class="screen-pane series-screen" role="tabpanel" aria-labelledby="tab-series" aria-label="シリーズ" hidden>
+          <header class="screen-heading"><div class="eyebrow">STORY UNIVERSE</div><h1>シリーズ</h1><p>同じ世界につながる作品を、ひとつの机で管理します。</p></header>
+          <section class="series-settings" aria-label="シリーズ設定">
+            <label for="series-title">シリーズ名</label>
+            <input id="series-title" maxlength="300" autocomplete="off">
+            <label for="series-summary">シリーズ概要</label>
+            <textarea id="series-summary" rows="4" maxlength="8000"></textarea>
+          </section>
+          <div class="series-list-heading"><div><span class="eyebrow">WORKS</span><h2>作品</h2></div><button id="series-add-work" type="button" class="primary">＋ 新しい作品</button></div>
+          <div id="series-works" class="series-works" aria-live="polite"></div>
+        </section>
         <section id="screen-manuscript" class="screen-pane" role="tabpanel" aria-labelledby="tab-manuscript" aria-label="本文">
           <div class="chapter-header"><div><div class="eyebrow" id="episode-position">EPISODE 01</div><label class="sr-only" for="episode-title">話タイトル</label><input id="episode-title" aria-label="話タイトル" maxlength="300"></div></div>
           <div class="status-strip"><span id="recovery-status"></span><span id="word-count"></span></div>
@@ -91,7 +104,9 @@
   <script src="./migration.js"></script>
   <script src="./package.js"></script>
   <script src="./storage.js"></script>
+  <script src="./series-storage.js"></script>
   <script src="./app.js"></script>
+  <script src="./series.js"></script>
   <script src="./workspace-loader.js"></script>
   <script src="./pwa.js"></script>
 </body>
