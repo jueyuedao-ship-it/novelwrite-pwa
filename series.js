@@ -14,18 +14,36 @@
     else console.warn(message);
   }
 
-  function showSeriesScreen() {
-    $('tab-series').classList.add('active');
-    $('tab-series').setAttribute('aria-selected', 'true');
-    $('screen-series').hidden = false;
-    $('sidebar').hidden = true;
-    document.querySelector('.integrated-workspace')?.classList.add('series-mode');
-    for (const name of existingTabs) {
-      $(`tab-${name}`).classList.remove('active');
-      $(`tab-${name}`).setAttribute('aria-selected', 'false');
-      $(`screen-${name}`).hidden = true;
+  async function seriesDb() {
+    if (!db) db = await root.NovelStorage.openStore();
+    return db;
+  }
+
+  async function assertFullWorkMode() {
+    if (typeof root.NovelStorage.loadWorkspaceMeta !== 'function') return;
+    const chapterMeta = await root.NovelStorage.loadWorkspaceMeta(await seriesDb());
+    if (chapterMeta?.mode === 'chapter-workspace') {
+      throw new Error('章ワークスペース中はシリーズや作品を切り替えられません。先にマスター作品ZIPを開いて通常モードへ戻してください。');
     }
-    void render();
+  }
+
+  async function showSeriesScreen() {
+    try {
+      await assertFullWorkMode();
+      $('tab-series').classList.add('active');
+      $('tab-series').setAttribute('aria-selected', 'true');
+      $('screen-series').hidden = false;
+      $('sidebar').hidden = true;
+      document.querySelector('.integrated-workspace')?.classList.add('series-mode');
+      for (const name of existingTabs) {
+        $(`tab-${name}`).classList.remove('active');
+        $(`tab-${name}`).setAttribute('aria-selected', 'false');
+        $(`screen-${name}`).hidden = true;
+      }
+      await render();
+    } catch (error) {
+      toast(error?.message || String(error));
+    }
   }
 
   function leaveSeriesScreen() {
@@ -34,11 +52,6 @@
     $('screen-series').hidden = true;
     $('sidebar').hidden = false;
     document.querySelector('.integrated-workspace')?.classList.remove('series-mode');
-  }
-
-  async function seriesDb() {
-    if (!db) db = await root.NovelStorage.openStore();
-    return db;
   }
 
   async function waitForEditorIdle() {
@@ -55,6 +68,7 @@
 
   async function selectWork(workId) {
     if (!activeSeries || activeMeta?.activeWorkId === workId) return;
+    await assertFullWorkMode();
     await waitForEditorIdle();
     await root.NovelStorage.setActiveWorkspace(await seriesDb(), activeSeries.id, workId);
     location.reload();
@@ -62,6 +76,7 @@
 
   async function createWork() {
     if (!activeSeries) return;
+    await assertFullWorkMode();
     await waitForEditorIdle();
     const work = root.NovelModel.createWork();
     await root.NovelStorage.createWorkInSeries(await seriesDb(), activeSeries.id, { work, images: [] });
@@ -70,6 +85,7 @@
 
   async function deleteWork(work) {
     if (!activeSeries) return;
+    await assertFullWorkMode();
     const works = await root.NovelStorage.listWorks(await seriesDb(), activeSeries.id);
     if (works.length <= 1) {
       toast('シリーズの最後の1作品は削除できません。');
@@ -143,7 +159,7 @@
     }, 350);
   }
 
-  $('tab-series').addEventListener('click', showSeriesScreen);
+  $('tab-series').addEventListener('click', () => void showSeriesScreen());
   for (const name of existingTabs) $(`tab-${name}`).addEventListener('click', leaveSeriesScreen, true);
   $('series-title').addEventListener('input', scheduleSeriesSave);
   $('series-summary').addEventListener('input', scheduleSeriesSave);
