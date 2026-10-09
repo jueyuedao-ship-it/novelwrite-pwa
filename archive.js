@@ -29,6 +29,14 @@
       entries.push({ name, bytes });
     }
     const payloadById = new Map(value.images.map(image => [image.id, image]));
+    common.assertUncompressedBudget([
+      ...entries.map(entry => ({ name: entry.name, size: entry.bytes.length })),
+      ...value.work.images.map(metadata => {
+        const image = payloadById.get(metadata.id);
+        if (!image?.blob || !Number.isSafeInteger(image.blob.size)) throw new Error('作品から参照されている画像本体がありません。');
+        return { name: metadata.name || metadata.id, size: image.blob.size };
+      })
+    ]);
     const imageManifest = [];
     for (let index = 0; index < value.work.images.length; index++) {
       const metadata = value.work.images[index];
