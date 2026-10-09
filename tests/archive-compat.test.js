@@ -34,3 +34,9 @@ test('full-work adapter rejects chapter archive manifests', async () => {
   const read = await common.readArchive(blob);
   await assert.rejects(() => archive.importArchiveRead(read), /対応していない作品ZIP形式/);
 });
+
+test('browser archive adapter lazy-loads archive-common when loaded standalone', () => {
+  const source = require('node:fs').readFileSync(require.resolve('../archive.js'), 'utf8');
+  assert.match(source, /import\(['"]\.\/archive-common\.js['"]\)/);
+  assert.match(source, /ensureCommon/);
+});
