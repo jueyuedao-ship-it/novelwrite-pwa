@@ -1,6 +1,6 @@
 # Series Archive and Series Switching Design
 
-Status: Proposed
+Status: Approved
 Date: 2026-10-10
 
 ## 1. Purpose
@@ -93,7 +93,7 @@ Date: 2026-10-10
 
 ダイアログ下部に `＋ 新しいシリーズ` を置いてよい。上部の「新しいシリーズ」と同じ処理を呼ぶ。
 
-章ワークスペース中はSeries切替・新規Series・Work切替・Work追加・Work置換を禁止する。
+章ワークスペース中はSeries切替・新規Series・Work切替・Work追加を禁止する。ただし章ワークスペースから通常モードへ戻るため、上部の切替ボタンは `マスター作品ZIPを開く` に変わり、既存のfull Work ZIP読込だけを許可する。
 
 ## 5. Remembering the Last Work per Series
 
@@ -272,21 +272,22 @@ ZIP codecは通常編集時にロードせず、Series ZIP操作時にlazy-load�
 - Series chooser UI
 - Series switch
 - New Series
+- topbar Series controls and Series ZIP orchestration
 - Plot内Work switch/add/delete
 - Plot内Work ZIP export/import controls
+- existing `app.js` Work ZIP handlersへの明示的なbypass/reuse
 
 ### `app.js`
 
-- topbar Series controls
-- pending-save flush shared helper
-- Series ZIP export orchestration entry point
-- current Work ZIP import/export handlers reusable from `series.js`
+- current Work ZIP import/export/reset handlersを互換経路として維持する
+- Work ZIP format/validation logicは変更しない
 
 ### `index.html`
 
-- topbar labels
-- Series switch dialog/container
-- Plot Series settingsのWork archive controls
+- topbar Series-level labels
+- Plot Series settings container
+
+Series switch dialogは `series.js` が必要時に生成する。
 
 ### `series.css` / `styles.css`
 
@@ -295,7 +296,7 @@ ZIP codecは通常編集時にロードせず、Series ZIP操作時にlazy-load�
 ### `sw.js`
 
 - app-shell cache generation bump
-- new runtime asset handling
+- `series-archive.js` precache
 
 ## 10. Storage API Direction
 
@@ -343,12 +344,14 @@ Series associationはlocal container concernのままにする。これにより
 - New Series: disabled
 - Work switch: disabled
 - New Work: disabled
-- Work ZIP import: disabled
+- Plot内のWork ZIP import: disabled
+- Topbarのmaster Work ZIP import: **enabled only as the exit path to full-work mode**
+- Topbar label: `マスター作品ZIPを開く`
 - Work ZIP export: existing chapter/full-work policyに従う
 - Series metadata editing: read-only
 - **Series ZIP export: disabled**
 
-Series ZIPはactive Workを含む全Workの完全バックアップを意味するため、部分的なchapter workspace状態からは作成しない。
+Series ZIPはactive Workを含む全Workの完全バックアップを意味するため、部分的なchapter workspace状態からは作成しない。一方、full Work ZIPを読み込む既存保存経路は `workspaceMeta/active` を解除して通常モードへ戻すため、この1経路だけは章ワークスペース中も維持する。
 
 ## 13. Failure Handling
 
@@ -418,7 +421,7 @@ DB version bumpは不要。
 ### UI
 
 - topbar contains `シリーズを切り替える`
-- topbar no longer exposes old `作品を開く` behavior
+- topbar no longer exposes old `作品を開く` behavior in full-work mode
 - primary export is `シリーズZIPで保存`
 - reset action is `新しいシリーズ`
 - Plot contains `現在の作品ZIPで保存`
@@ -426,6 +429,7 @@ DB version bumpは不要。
 - chooser lists every stored Series and Work count
 - switch restores last Work
 - chapter workspace disables Series-level controls
+- chapter workspace exposes `マスター作品ZIPを開く` as the full-work exit path
 
 ### Regression
 
@@ -448,8 +452,9 @@ DB version bumpは不要。
 6. 単体Work ZIP export/importと旧JSON importをPlotから引き続き利用できる。
 7. Series内Work切替はPlotのシリーズ設定に残る。
 8. Work ZIP/章ZIP形式は変更されない。
-9. destructive migration不要。
-10. full regression、syntax checks、PR CI、post-merge CIを通過してから完了とする。
+9. chapter workspaceからはmaster Work ZIP importでfull-work modeへ戻れる。
+10. destructive migration不要。
+11. full regression、syntax checks、PR CI、post-merge CIを通過してから完了とする。
 
 ## 17. Rollout
 
