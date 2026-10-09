@@ -55,3 +55,10 @@ test('chapter workspace leaves chapter ZIP export interception available while b
   assert.match(source, /import-button/);
   assert.match(source, /reset/);
 });
+
+test('full-work series label is reasserted after later chapter-mode UI mutations', () => {
+  const source = read('series.js');
+  assert.match(source, /MutationObserver/);
+  assert.match(source, /observe\([\s\S]*export-archive|exportButton[\s\S]*observe/);
+  assert.match(source, /setTopbarLabels/);
+});
