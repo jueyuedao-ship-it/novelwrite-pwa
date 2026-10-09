@@ -56,9 +56,7 @@ test('chapter workspace leaves chapter ZIP export interception available while b
   assert.match(source, /reset/);
 });
 
-test('full-work series label is reasserted after later chapter-mode UI mutations', () => {
-  const source = read('series.js');
-  assert.match(source, /MutationObserver/);
-  assert.match(source, /observe\([\s\S]*export-archive|exportButton[\s\S]*observe/);
-  assert.match(source, /setTopbarLabels/);
+test('chapter workspace controller preserves the Series export label outside chapter mode', () => {
+  const source = read('chapter-workspace-controller.js');
+  assert.match(source, /chapterMode\s*\?\s*['"]章ZIPで保存\s*['"]\s*:\s*['"]シリーズZIPで保存\s*['"]/);
 });
