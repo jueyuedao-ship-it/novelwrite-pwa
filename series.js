@@ -89,6 +89,14 @@
     location.reload();
   }
 
+  async function moveWork(work, delta) {
+    if (!activeSeries) return;
+    await assertFullWorkMode();
+    await waitForEditorIdle();
+    await root.NovelStorage.moveWork(await seriesDb(), work.id, delta);
+    await render();
+  }
+
   async function deleteWork(work) {
     if (!activeSeries) return;
     await assertFullWorkMode();
@@ -164,7 +172,7 @@
       if (!series) throw new Error('現在のシリーズが見つかりません。');
       const workRecords = await root.NovelStorage.listWorks(store, series.id);
       const works = [];
-      for (const record of workRecords.slice().sort((a, b) => String(a.id).localeCompare(String(b.id)))) {
+      for (const record of workRecords) {
         const value = await root.NovelStorage.loadWork(store, record.id);
         if (!value) throw new Error(`作品「${record.title || record.id}」を読み込めませんでした。`);
         works.push(value);
@@ -185,7 +193,7 @@
     queueMicrotask(() => { workExportBypass = false; });
   }
 
-  function workCard(work, isActive, canDelete, canManage) {
+  function workCard(work, isActive, canDelete, canManage, index, total) {
     const card = document.createElement('article');
     card.className = `series-work-card${isActive ? ' active' : ''}`;
     const body = document.createElement('div');
@@ -198,6 +206,27 @@
 
     const actions = document.createElement('div');
     actions.className = 'series-work-actions';
+
+    const moveUp = document.createElement('button');
+    moveUp.type = 'button';
+    moveUp.className = 'quiet';
+    moveUp.textContent = '↑';
+    moveUp.setAttribute('aria-label', '作品を上へ');
+    moveUp.title = '作品を上へ';
+    moveUp.disabled = !canManage || index <= 0;
+    moveUp.addEventListener('click', () => void moveWork(work, -1).catch(error => toast(error.message)));
+    actions.append(moveUp);
+
+    const moveDown = document.createElement('button');
+    moveDown.type = 'button';
+    moveDown.className = 'quiet';
+    moveDown.textContent = '↓';
+    moveDown.setAttribute('aria-label', '作品を下へ');
+    moveDown.title = '作品を下へ';
+    moveDown.disabled = !canManage || index >= total - 1;
+    moveDown.addEventListener('click', () => void moveWork(work, 1).catch(error => toast(error.message)));
+    actions.append(moveDown);
+
     if (isActive) {
       const badge = document.createElement('span');
       badge.className = 'series-active-badge';
@@ -283,11 +312,13 @@
 
     const works = await root.NovelStorage.listWorks(store, activeSeries.id);
     const container = $('series-works');
-    container.replaceChildren(...works.map(work => workCard(
+    container.replaceChildren(...works.map((work, index) => workCard(
       work,
       work.id === activeMeta.activeWorkId,
       works.length > 1,
-      canManage
+      canManage,
+      index,
+      works.length
     )));
   }
 

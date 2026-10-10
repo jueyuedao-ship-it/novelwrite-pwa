@@ -48,7 +48,7 @@ async function exportedSeries() {
   };
 }
 
-test('series archive wraps id-sorted valid work archives with hashes and active work metadata', async () => {
+test('series archive preserves supplied work order with hashes and active work metadata', async () => {
   const seriesArchive = require('../series-archive.js');
   const workZ = packageWithId('work-z', '終章');
   const workA = packageWithId('work-a', '第一作');
@@ -65,7 +65,7 @@ test('series archive wraps id-sorted valid work archives with hashes and active 
   assert.equal(read.manifest.formatVersion, 1);
   assert.deepEqual(read.manifest.series, series);
   assert.equal(read.manifest.activeWorkId, 'work-z');
-  assert.deepEqual(read.manifest.works.map(item => item.id), ['work-a', 'work-z']);
+  assert.deepEqual(read.manifest.works.map(item => item.id), ['work-z', 'work-a']);
   assert.deepEqual(read.manifest.works.map(item => item.path), ['works/0001.zip', 'works/0002.zip']);
 
   for (const item of read.manifest.works) {
@@ -129,8 +129,8 @@ test('series archive imports a valid multi-work export into validated work packa
 
   assert.deepEqual(restored.series, series);
   assert.equal(restored.activeWorkId, 'work-b');
-  assert.deepEqual(restored.works.map(item => item.work.id), ['work-a', 'work-b']);
-  assert.deepEqual(restored.works.map(item => item.work.title), ['第一作', '第二作']);
+  assert.deepEqual(restored.works.map(item => item.work.id), ['work-b', 'work-a']);
+  assert.deepEqual(restored.works.map(item => item.work.title), ['第二作', '第一作']);
 });
 
 test('series archive import rejects unsupported format, version, empty works, and foreign activeWorkId', async () => {
@@ -146,14 +146,12 @@ test('series archive import rejects unsupported format, version, empty works, an
   await assert.rejects(() => seriesArchive.importSeriesArchive(foreignActive), /activeWorkId|作品一覧/);
 });
 
-test('series archive import enforces sorted unique work ids and canonical unique paths', async () => {
+test('series archive import enforces unique work ids and canonical unique paths', async () => {
   const { seriesArchive, blob } = await exportedSeries();
-  const unsorted = await rewriteSeriesArchive(blob, { mutateManifest: manifest => { manifest.works.reverse(); } });
   const duplicateId = await rewriteSeriesArchive(blob, { mutateManifest: manifest => { manifest.works[1].id = manifest.works[0].id; } });
   const duplicatePath = await rewriteSeriesArchive(blob, { mutateManifest: manifest => { manifest.works[1].path = manifest.works[0].path; } });
   const nonCanonicalPath = await rewriteSeriesArchive(blob, { mutateManifest: manifest => { manifest.works[0].path = 'works/a.zip'; } });
 
-  await assert.rejects(() => seriesArchive.importSeriesArchive(unsorted), /並び順|作品一覧/);
   await assert.rejects(() => seriesArchive.importSeriesArchive(duplicateId), /重複|作品ID/);
   await assert.rejects(() => seriesArchive.importSeriesArchive(duplicatePath), /パス|作品一覧|重複/);
   await assert.rejects(() => seriesArchive.importSeriesArchive(nonCanonicalPath), /作品一覧|パス/);

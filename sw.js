@@ -19,6 +19,7 @@ const APP_SHELL = [
   './workspace-mode.js',
   './storage.js',
   './series-storage.js',
+  './series-ordering.js',
   './series-schema.js',
   './workspace-storage.js',
   './images.js',

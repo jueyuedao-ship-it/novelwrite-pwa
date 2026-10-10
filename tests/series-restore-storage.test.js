@@ -98,13 +98,15 @@ test('restore creates all works atomically and activates manifest active work', 
   const api = storage();
   const db = await api.openStore({ indexedDB, name: dbName('create') });
   try {
-    const value = restoreValue('series-restored', [withWorkId('work-a', 'A'), withWorkId('work-b', 'B')], 'work-b');
+    const value = restoreValue('series-restored', [withWorkId('work-b', 'B'), withWorkId('work-a', 'A')], 'work-b');
     const inspection = await api.inspectSeriesRestore(db, value);
     const result = await api.restoreSeries(db, value, inspection);
 
     assert.deepEqual((await api.listWorks(db, 'series-restored')).map(item => item.id).sort(), ['work-a', 'work-b']);
     assert.equal((await api.loadWork(db, 'work-a')).work.title, 'A');
     assert.equal((await api.loadWork(db, 'work-b')).work.title, 'B');
+    assert.equal((await rawWork(db, 'work-b')).order, 0);
+    assert.equal((await rawWork(db, 'work-a')).order, 1);
     assert.deepEqual(result.workspaceMeta, { id: 'current', activeSeriesId: 'series-restored', activeWorkId: 'work-b' });
     assert.deepEqual(await api.getWorkspaceMeta(db), result.workspaceMeta);
     assert.equal((await api.getSeries(db, 'series-restored')).lastActiveWorkId, 'work-b');

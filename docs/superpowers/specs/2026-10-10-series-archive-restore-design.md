@@ -16,6 +16,7 @@ The user must be able to export a Series ZIP on one device and later restore the
 - Restore all Works in the archive as one Series.
 - Preserve all Series, Work, chapter, episode, line, scene, character, image, and custom-field IDs from the archive.
 - Restore `activeWorkId` from the Series manifest.
+- Preserve the user-controlled Work order encoded by the manifest sequence.
 - If the same Series ID already exists locally, allow the user to replace that Series after explicit confirmation.
 - Reject restores that would collide with IDs owned by another local Series.
 - Make the local restore atomic: either the complete Series is restored or IndexedDB remains unchanged.
@@ -75,7 +76,7 @@ The outer manifest has this shape:
 
 Each nested ZIP must remain a valid `fumizukue-work-archive` v1 archive.
 
-The current exporter orders `works` by Work ID ascending. The importer treats that deterministic ordering as part of the v1 contract.
+The current exporter preserves the user-controlled Work order in the manifest. The importer treats manifest order as the Series Work order to restore.
 
 ## 5. Restore semantics
 
@@ -139,8 +140,8 @@ The import path performs the following steps in order:
 4. Require `formatVersion === 1`.
 5. Validate `series.id`, `series.title`, and `series.summary`.
 6. Require a non-empty `works` array.
-7. Require unique Work IDs and require the manifest Work list to be sorted by Work ID ascending.
-8. Require unique paths and canonical paths in exact sequence: `works/0001.zip`, `works/0002.zip`, ...
+7. Require unique Work IDs while preserving manifest order.
+8. Require unique paths and canonical paths in exact sequence: `works/0001.zip`, `works/0002.zip`, ...; this sequence defines restored Work order.
 9. Require every `sha256` to be a lowercase 64-character hex digest.
 10. Require `activeWorkId` to match exactly one declared Work.
 11. Require the outer ZIP to contain only `manifest.json` plus declared Work ZIP paths.
@@ -198,7 +199,7 @@ The transaction performs:
 1. Re-check target Series existence and collision assumptions inside the transaction.
 2. If replacing an existing matching Series, delete all rows belonging to its current Works from every Work-related store.
 3. Write the restored Series record.
-4. Write every restored Work and all child rows.
+4. Write every restored Work and all child rows, persisting its manifest position as the Work `order`.
 5. Rebuild `idRegistry` for restored records.
 6. Set `lastActiveWorkId` on the restored Series.
 7. Write `workspaceMeta/current` with the restored Series and `activeWorkId`.
@@ -297,7 +298,7 @@ User-visible failures should distinguish these classes where practical:
 - nested ZIP checksum mismatch;
 - invalid nested Work ZIP;
 - outer/nested Work metadata mismatch;
-- duplicate or unsorted Work IDs;
+- duplicate Work IDs;
 - duplicate/non-canonical Work paths;
 - invalid `activeWorkId`;
 - ID conflict with another Series;
@@ -353,7 +354,7 @@ Tests are written first for each behavior.
 ### Series archive tests
 
 - valid multi-Work Series ZIP imports and returns validated packages;
-- manifest Work ID ordering and canonical `works/NNNN.zip` paths are enforced;
+- manifest Work order is preserved and canonical `works/NNNN.zip` paths are enforced;
 - checksum tampering is rejected;
 - nested invalid Work ZIP is rejected;
 - nested Work ID mismatch is rejected;

@@ -41,14 +41,13 @@
   function normalizeWorks(works) {
     if (!Array.isArray(works) || works.length === 0) throw new Error('シリーズに保存する作品がありません。');
     const ids = new Set();
-    const normalized = works.map(item => {
+    return works.map(item => {
       const id = item?.work?.id;
       if (typeof id !== 'string' || !id) throw new Error('シリーズ内の作品IDが不正です。');
       if (ids.has(id)) throw new Error('シリーズ内に同じ作品IDが重複しています。');
       ids.add(id);
       return item;
     });
-    return normalized.sort((left, right) => String(left.work.id).localeCompare(String(right.work.id)));
   }
 
   async function exportSeriesArchive({ series, activeWorkId, works } = {}) {
@@ -106,7 +105,6 @@
 
     const ids = new Set();
     const paths = new Set();
-    let previousId = null;
     for (let index = 0; index < manifest.works.length; index++) {
       const item = manifest.works[index];
       const expectedPath = `works/${String(index + 1).padStart(4, '0')}.zip`;
@@ -116,12 +114,8 @@
       }
       if (ids.has(item.id)) throw new Error('シリーズZIP内に同じ作品IDが重複しています。');
       if (paths.has(item.path)) throw new Error('シリーズZIP内に同じ作品パスが重複しています。');
-      if (previousId !== null && previousId.localeCompare(item.id) >= 0) {
-        throw new Error('シリーズZIP内の作品IDの並び順が不正です。');
-      }
       ids.add(item.id);
       paths.add(item.path);
-      previousId = item.id;
     }
 
     if (typeof manifest.activeWorkId !== 'string' || !ids.has(manifest.activeWorkId)) {

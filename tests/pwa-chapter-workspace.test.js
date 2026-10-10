@@ -10,7 +10,7 @@ test('service worker caches every chapter and series workspace runtime asset und
   for (const asset of [
     'chapter-workspace.css', 'workspace-mode.js', 'workspace-storage.js', 'archive-common.js',
     'chapter-bundle.js', 'chapter-archive.js', 'chapter-workspace-controller.js',
-    'series.css', 'series-storage.js', 'series-schema.js', 'series.js', 'series-archive.js'
+    'series.css', 'series-storage.js', 'series-ordering.js', 'series-schema.js', 'series.js', 'series-archive.js'
   ]) {
     assert.ok(sw.includes(`./${asset}`), `${asset} must be cached`);
   }

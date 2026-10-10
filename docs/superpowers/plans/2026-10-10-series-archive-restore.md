@@ -25,7 +25,7 @@
 
 ## Review Focus
 
-- **Tampered or structurally ambiguous Series ZIP:** checksum mismatch, extra entries, non-canonical paths, duplicate/unsorted Work IDs must fail before storage code runs. Task 1 adds these tests.
+- **Tampered or structurally ambiguous Series ZIP:** checksum mismatch, extra entries, non-canonical paths, duplicate Work IDs must fail before storage code runs. Task 1 adds these tests.
 - **Same-Series replacement with changed Work membership:** replacing a Series that gained/lost Works locally must not silently delete concurrent edits; transaction-time membership comparison must abort stale inspection. Task 3 adds this test.
 - **Cross-Series collision introduced after preflight:** another tab can claim an incoming ID between inspection and commit; the write transaction must re-check and abort. Task 3 adds this test.
 - **Mid-restore request/quota failure:** no partially restored Series, Work, child record, registry row, or workspace metadata may remain. Task 3 adds an injected-abort rollback test.
@@ -42,7 +42,7 @@
 **Interfaces:**
 - Consumes: `NovelArchiveCommon.readArchive(file)`, `NovelArchiveCommon.sha256(bytes)`, existing `NovelArchive.importArchiveRead(readResult)`.
 - Produces: `importSeriesArchive(file) -> Promise<SeriesRestoreValue>` and `importSeriesArchiveRead(readResult) -> Promise<SeriesRestoreValue>`.
-- `SeriesRestoreValue` shape: `{ series: { id, title, summary }, activeWorkId, works }`, where `works` is the fully validated Work-package array sorted by Work ID ascending.
+- `SeriesRestoreValue` shape: `{ series: { id, title, summary }, activeWorkId, works }`, where `works` is the fully validated Work-package array in manifest/user-controlled order.
 
 - [ ] **Step 1: Write failing happy-path import test**
 
@@ -65,7 +65,7 @@ async function importSeriesArchiveRead(readResult)
 
 `importSeriesArchive()` reads the outer ZIP with `common.readArchive()` and delegates to `importSeriesArchiveRead()`.
 
-`importSeriesArchiveRead()` must validate `format`, `formatVersion`, Series metadata, non-empty Work list, Work ID ascending order, exact canonical `works/0001.zip` paths, unique IDs/paths, lowercase 64-char hashes, declared-entry allow-list, `activeWorkId`, nested SHA-256 values, nested Work ZIP validity via `workArchive.importArchiveRead()`, and outer/nested Work ID/title equality.
+`importSeriesArchiveRead()` must validate `format`, `formatVersion`, Series metadata, non-empty Work list, manifest Work order, exact canonical `works/0001.zip` paths, unique IDs/paths, lowercase 64-char hashes, declared-entry allow-list, `activeWorkId`, nested SHA-256 values, nested Work ZIP validity via `workArchive.importArchiveRead()`, and outer/nested Work ID/title equality.
 
 - [ ] **Step 4: Add hostile archive tests**
 
@@ -74,7 +74,6 @@ Add tests covering:
 ```text
 unsupported format/version
 empty works
-unsorted Work IDs
 duplicate Work IDs
 duplicate/non-canonical paths
 missing declared nested ZIP
@@ -266,7 +265,7 @@ async function restoreSeries(db, restoreValue, inspection)
 
 Open one read-write transaction over `series`, `workspaceMeta`, and every `BASE_STORE_NAMES` store. Before deletion, read current target-Series Works and collision ownership inside that same transaction and require they still match `inspection.mode` + `inspection.targetWorkIds`; then reject any cross-Series incoming-ID collision.
 
-For replacement, delete all rows for the target Series' current Works from every Work store. For each incoming Work, compute revision as `max(1, existingSameIdRevision + 1)` and call Task 2's transaction-local writer with `{ workRecordExtras: { seriesId: restoreValue.series.id } }`. Write the Series record with preserved archive `id/title/summary`, a fresh local `createdAt/updatedAt` policy consistent with current records, and `lastActiveWorkId`. Write `workspaceMeta/current` last.
+For replacement, delete all rows for the target Series' current Works from every Work store. For each incoming Work, compute revision as `max(1, existingSameIdRevision + 1)` and call Task 2's transaction-local writer with `{ workRecordExtras: { seriesId: restoreValue.series.id, order } }`. Write the Series record with preserved archive `id/title/summary`, a fresh local `createdAt/updatedAt` policy consistent with current records, and `lastActiveWorkId`. Write `workspaceMeta/current` last.
 
 After commit, invalidate `scopeCache` entries for all removed/restored Work IDs. Do not bump IndexedDB version.
 

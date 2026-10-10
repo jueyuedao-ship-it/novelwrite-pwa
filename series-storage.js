@@ -667,12 +667,12 @@
             }
 
             const existingById = new Map(allWorks.map(work => [work.id, work]));
-            for (const value of normalized.works) {
+            for (const [order, value] of normalized.works.entries()) {
               const previous = existingById.get(value.work.id);
               const previousRevision = Number.isSafeInteger(previous?._revision) ? previous._revision : 0;
               baseStorage.writeValidatedWorkToTransaction(tx, value, {
                 revision: Math.max(1, previousRevision + 1),
-                workRecordExtras: { seriesId: normalized.series.id }
+                workRecordExtras: { seriesId: normalized.series.id, order }
               });
             }
 
