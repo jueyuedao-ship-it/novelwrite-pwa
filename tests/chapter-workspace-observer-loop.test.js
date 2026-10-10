@@ -47,6 +47,7 @@ async function startController(workspaceMeta) {
   main.dataset.ready = 'true';
   const workOption = makeElement('作品全体');
   const strip = makeElement();
+  const importButton = makeElement('シリーズを切り替える');
   const tabPlot = makeElement();
   const tabCharacters = makeElement();
   const textNode = { textContent: 'ZIPで保存 ' };
@@ -58,6 +59,7 @@ async function startController(workspaceMeta) {
   const elements = new Map([
     ['main', main],
     ['workspace-mode-strip', strip],
+    ['import-button', importButton],
     ['txt-scope', textScope],
     ['export-archive', exportButton],
     ['tab-plot', tabPlot],
@@ -122,7 +124,7 @@ async function startController(workspaceMeta) {
   await new Promise(resolve => setTimeout(resolve, 30));
   const deliveries = activeObserver.deliveries;
   activeObserver.disconnect();
-  return { context, deliveries, workOption, strip };
+  return { context, deliveries, workOption, strip, importButton };
 }
 
 test('full-work startup child-list observer settles after applying the UI', async () => {
@@ -130,6 +132,7 @@ test('full-work startup child-list observer settles after applying the UI', asyn
   assert.equal(fullWork.context.NovelChapterWorkspace.getWorkspaceMeta(), null);
   assert.ok(fullWork.deliveries <= 1, `full-work observer fired ${fullWork.deliveries} times`);
   assert.equal(fullWork.workOption.textContent, '作品全体');
+  assert.equal(fullWork.importButton.textContent, 'シリーズを切り替える');
 });
 
 test('chapter-workspace startup child-list observer settles after applying the UI', async () => {
@@ -143,4 +146,5 @@ test('chapter-workspace startup child-list observer settles after applying the U
   assert.ok(chapterMode.deliveries <= 1, `chapter-workspace observer fired ${chapterMode.deliveries} times`);
   assert.equal(chapterMode.workOption.textContent, '読み込み済み章');
   assert.equal(chapterMode.strip.textContent, '章ワークスペース · 第一章のみを編集中 · 作品全体ではありません');
+  assert.equal(chapterMode.importButton.textContent, 'マスター作品ZIPを開く');
 });

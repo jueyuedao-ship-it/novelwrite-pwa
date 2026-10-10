@@ -247,7 +247,8 @@
       const importButton = $('import-button');
       if (importButton) {
         importButton.disabled = false;
-        importButton.textContent = chapterMode ? 'マスター作品ZIPを開く' : 'シリーズを切り替える';
+        const text = chapterMode ? 'マスター作品ZIPを開く' : 'シリーズを切り替える';
+        if (importButton.textContent !== text) importButton.textContent = text;
       }
       const reset = $('reset'); if (reset) reset.disabled = chapterMode;
       const sample = $('load-sample'); if (sample) sample.disabled = chapterMode;
