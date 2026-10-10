@@ -127,12 +127,22 @@
       throw new Error('シリーズZIP内のファイル一覧がmanifestと一致しません。');
     }
 
-    const works = [];
+    const nestedBudget = [];
     for (const item of manifest.works) {
       const bytes = files[item.path];
       if (await dependencies.common.sha256(bytes) !== item.sha256) {
         throw new Error(`作品ZIP ${item.path} のチェックサムが一致しません。`);
       }
+      const nestedEntries = dependencies.common.preflightZip(bytes);
+      for (const entry of nestedEntries) {
+        nestedBudget.push({ name: `${item.path}::${entry.name}`, size: entry.uncompressedSize });
+      }
+    }
+    dependencies.common.assertUncompressedBudget(nestedBudget);
+
+    const works = [];
+    for (const item of manifest.works) {
+      const bytes = files[item.path];
       const nestedRead = await dependencies.common.readArchive(new Blob([bytes], { type: 'application/zip' }));
       const restored = await dependencies.workArchive.importArchiveRead(nestedRead);
       if (restored.work.id !== item.id) throw new Error('作品ZIPの作品IDがSeries manifestと一致しません。');
