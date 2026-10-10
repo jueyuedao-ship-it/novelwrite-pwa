@@ -195,6 +195,25 @@ test('series archive import rejects invalid nested work archives and outer metad
   await assert.rejects(() => seriesArchive.importSeriesArchive(titleMismatch), /作品名|manifest/);
 });
 
+test('series archive preflights aggregate nested expanded size before opening work archives', async () => {
+  const { seriesArchive, blob } = await exportedSeries();
+  const originalAssert = common.assertUncompressedBudget;
+  let nestedBudgetChecked = false;
+  common.assertUncompressedBudget = items => {
+    if (items.some(item => String(item?.name || '').includes('::'))) {
+      nestedBudgetChecked = true;
+      throw new Error('nested aggregate budget exceeded');
+    }
+    return originalAssert(items);
+  };
+  try {
+    await assert.rejects(() => seriesArchive.importSeriesArchive(blob), /nested aggregate budget exceeded/);
+    assert.equal(nestedBudgetChecked, true);
+  } finally {
+    common.assertUncompressedBudget = originalAssert;
+  }
+});
+
 test('browser series archive adapter lazy-loads its dependencies', () => {
   const fs = require('node:fs');
   const source = fs.readFileSync(require.resolve('../series-archive.js'), 'utf8');
