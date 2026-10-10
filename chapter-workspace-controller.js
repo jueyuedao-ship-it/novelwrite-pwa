@@ -1,181 +1,131 @@
-/* Chapter-workspace orchestration and UI adapter. Loaded after app.js, before lazy extensions. */
+/* Chapter-workspace application controller. Loaded after app.js and before lazy editor extensions. */
 (function (root) {
   'use strict';
-
+  const $ = id => document.getElementById(id);
   const baseWorkspace = root.NovelWorkspace;
   const modeTools = root.NovelWorkspaceMode;
   if (!baseWorkspace || !modeTools || !root.NovelStorage) return;
 
-  const $ = id => document.getElementById(id);
-  let workspaceMeta = null;
-  let controllerDb = null;
-  let expectedImportChapterId = null;
-  let archiveLoadPromise = null;
-  let applyingUi = false;
-  let catalogSignature = '';
-  let operationImageLoads = 0;
-  let compositionDepth = 0;
-
-  const clone = value => value == null ? null : structuredClone(value);
+  let db = null, workspaceMeta = null, modulesPromise = null, operationImageLoads = 0, operationComposition = 0;
+  let reloadGuard = false, observer = null, applyingUi = false;
+  const busy = () => document.querySelector('[aria-busy="true"]') !== null;
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-  const filename = name => (name || '無題').replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').replace(/[. ]+$/g, '').slice(0, 90) || '無題';
 
   function toast(message) { baseWorkspace.toast(message); }
+
+  async function openDb() {
+    if (!db) db = await root.NovelStorage.openStore();
+    return db;
+  }
+
+  async function refreshMeta() {
+    workspaceMeta = await root.NovelStorage.loadWorkspaceMeta(await openDb());
+    return workspaceMeta;
+  }
+
+  async function loadModules() {
+    if (!modulesPromise) {
+      modulesPromise = (async () => {
+        if (!root.NovelArchiveCommon) await import(new URL('./archive-common.js', location.href).href);
+        if (!root.NovelChapterBundle) await import(new URL('./chapter-bundle.js', location.href).href);
+        if (!root.NovelChapterArchive) await import(new URL('./chapter-archive.js', location.href).href);
+        if (!root.NovelArchive) await import(new URL('./archive.js', location.href).href);
+        if (!root.NovelArchiveCommon || !root.NovelChapterBundle || !root.NovelChapterArchive || !root.NovelArchive) {
+          throw new Error('章ZIP処理モジュールを読み込めませんでした。');
+        }
+        return { common: root.NovelArchiveCommon, bundle: root.NovelChapterBundle, archive: root.NovelChapterArchive, workArchive: root.NovelArchive };
+      })().catch(error => { modulesPromise = null; throw error; });
+    }
+    return modulesPromise;
+  }
+
+  async function waitForSaved() {
+    const deadline = Date.now() + 15000;
+    const status = $('save-status');
+    while (Date.now() < deadline) {
+      const text = status?.textContent || '';
+      if (/失敗|競合/.test(text)) throw new Error(text || '現在の変更を保存できませんでした。');
+      if (!/保存中|未保存|起動しています/.test(text)) return;
+      await sleep(80);
+    }
+    throw new Error('現在の変更の保存完了を確認できませんでした。');
+  }
+
+  async function assertFileOperationReady() {
+    if (busy()) throw new Error('別の処理が完了してからやり直してください。');
+    if (operationComposition > 0) throw new Error('入力変換を確定してからやり直してください。');
+    if (operationImageLoads > 0) throw new Error('画像の読み込みが終わってからやり直してください。');
+    await waitForSaved();
+  }
+
+  function filename(name) {
+    return (name || '章').replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').replace(/[. ]+$/g, '').slice(0, 90) || '章';
+  }
+
   function download(blob, name) {
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
+    const url = URL.createObjectURL(blob), anchor = document.createElement('a');
     anchor.href = url; anchor.download = name; document.body.append(anchor); anchor.click(); anchor.remove();
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   }
 
-  async function loadArchiveModules() {
-    if (!archiveLoadPromise) {
-      archiveLoadPromise = (async () => {
-        for (const path of ['./archive-common.js', './chapter-bundle.js', './archive.js', './chapter-archive.js']) {
-          await import(new URL(path, location.href).href);
-        }
-        if (!root.NovelArchiveCommon || !root.NovelChapterBundle || !root.NovelArchive || !root.NovelChapterArchive) {
-          throw new Error('ZIP処理モジュールを読み込めませんでした。');
-        }
-        return { common: root.NovelArchiveCommon, full: root.NovelArchive, chapter: root.NovelChapterArchive };
-      })().catch(error => { archiveLoadPromise = null; throw error; });
-    }
-    return archiveLoadPromise;
-  }
-
-  async function waitForAppReady() {
-    const end = Date.now() + 15000;
-    while ($('main')?.dataset.ready !== 'true') {
-      if (Date.now() > end) throw new Error('作品データの起動が完了しませんでした。');
-      await sleep(20);
-    }
-  }
-
-  function assertFileOperationReady() {
-    const appBusy = $('app')?.getAttribute('aria-busy') === 'true';
-    const manuscriptImageBusy = Boolean(document.querySelector('.image-add:disabled'));
-    if (operationImageLoads || compositionDepth || manuscriptImageBusy) throw new Error('入力・画像の読み込みが終わってから操作してください。');
-    if (appBusy) throw new Error('作品の切り替えが終わってから操作してください。');
-  }
-
-  async function waitForSaved() {
-    assertFileOperationReady();
-    const end = Date.now() + 15000;
-    while (Date.now() < end) {
-      assertFileOperationReady();
-      const text = $('save-status')?.textContent || '';
-      if (/保存できません|保存先を利用できません/.test(text)) throw new Error(text);
-      if (text.includes('保存済み')) return;
-      await sleep(40);
-    }
-    throw new Error('端末内への保存が完了していません。');
-  }
-
-  async function ensureControllerDb(refresh = false) {
-    if (refresh && controllerDb) { try { controllerDb.close(); } catch {} controllerDb = null; }
-    if (!controllerDb) controllerDb = await root.NovelStorage.openStore();
-    return controllerDb;
-  }
-
-  async function refreshWorkspaceMeta() {
-    const wasChapter = workspaceMeta?.mode === 'chapter-workspace';
-    const db = await ensureControllerDb(true);
-    const nextMeta = await root.NovelStorage.loadWorkspaceMeta(db);
-    workspaceMeta = nextMeta;
-    if (wasChapter && !nextMeta) { location.reload(); return null; }
-    catalogSignature = '';
-    applyModeUi();
-    return workspaceMeta;
-  }
-
   async function exportChapter(chapterId) {
-    if (typeof chapterId !== 'string' || !chapterId) throw new Error('保存する章を選択してください。');
     try {
-      await waitForSaved();
-      const db = await ensureControllerDb();
-      const packageValue = await root.NovelStorage.loadWork(db);
-      if (!packageValue) throw new Error('保存された作品がありません。');
-      const chapterRecord = packageValue.work.chapters.find(item => item.id === chapterId);
-      if (!chapterRecord) throw new Error('保存する章のデータが端末内にありません。');
-      const revision = await root.NovelStorage.loadWorkRevision(db);
-      const modules = await loadArchiveModules();
-      const baseline = workspaceMeta?.baselines?.[chapterId];
-      const options = { baseRevision: revision };
-      if (baseline) { options.baseChapterHash = baseline.baseChapterHash; options.exportedAt = baseline.exportedAt; }
-      const blob = await modules.chapter.exportChapterArchive(packageValue, chapterId, options);
-      download(blob, `${filename(packageValue.work.title)}_${filename(chapterRecord.title)}.zip`);
+      await assertFileOperationReady();
+      const currentMeta = await refreshMeta();
+      const currentState = baseWorkspace.getState();
+      const targetId = chapterId || currentMeta?.loadedChapterIds?.[0] || currentState?.work?.chapters?.[0]?.id;
+      if (!targetId) throw new Error('保存する章がありません。');
+      const modules = await loadModules();
+      const bundle = modules.bundle.buildChapterBundle(currentState.work, currentState.images, targetId);
+      const blob = await modules.archive.exportChapterArchive(bundle);
+      const title = currentState.work.chapters.find(item => item.id === targetId)?.title || '章';
+      download(blob, `${filename(title)}.chapter.zip`);
       toast('章ZIPのダウンロードを開始しました。');
-      return blob;
-    } catch (error) {
-      toast(`章ZIPを書き出せませんでした：${error?.message || error}`);
-      throw error;
-    }
+    } catch (error) { toast(`章ZIPを書き出せませんでした：${error.message}`); }
   }
 
-  function confirmChapterReplace(title) {
-    return root.confirm(`章ワークスペースとして「${title || 'この章'}」を開きます。\n現在の作品は端末内で置き換わります。必要なら先にZIPバックアップを保存してください。`);
-  }
-
-  async function importChapterFile(file, expectedChapterId = null) {
-    if (!file) return false;
+  async function importChapter(file) {
     try {
-      await waitForSaved();
-      await loadArchiveModules();
-      const read = await root.NovelArchiveCommon.readArchive(file);
-      if (read.manifest?.format !== 'fumizukue-chapter-archive') throw new Error('章ZIPではありません。「作品を開く」から作品ZIPを選択してください。');
-      const imported = await root.NovelChapterArchive.importChapterArchiveRead(read);
-      if (expectedChapterId && workspaceMeta?.sourceWorkId && imported.workspaceMeta.sourceWorkId !== workspaceMeta.sourceWorkId) throw new Error('この作品の章ZIPではありません。');
-      if (expectedChapterId && imported.bundle.chapter.id !== expectedChapterId) throw new Error('選択した章とZIP内の章が一致しません。');
-      if (!confirmChapterReplace(imported.bundle.chapter.title)) return false;
-      const db = await ensureControllerDb(true);
-      await root.NovelStorage.saveChapterWorkspace(db, imported.packageValue, imported.workspaceMeta);
-      workspaceMeta = imported.workspaceMeta;
-      root.sessionStorage?.setItem('fumizukue.chapter-workspace.opened', imported.bundle.chapter.title || '章');
+      await assertFileOperationReady();
+      const modules = await loadModules();
+      const imported = await modules.archive.importChapterArchive(file);
+      await root.NovelStorage.saveChapterWorkspace(await openDb(), imported.bundle, {
+        loadedChapterIds: [imported.manifest.chapterId],
+        catalog: imported.manifest.catalog,
+        sourceManifest: imported.manifest,
+        masterBaseline: imported.masterBaseline
+      });
       location.reload();
-      return true;
-    } catch (error) {
-      toast(`章ZIPを取り込めませんでした：${error?.message || error}`);
-      return false;
-    }
+    } catch (error) { toast(`章ZIPを開けませんでした：${error.message}`); }
   }
 
-  function requestChapterImport(chapterId = null) {
-    expectedImportChapterId = chapterId;
-    const input = $('import-chapter-file');
-    if (input) input.click();
+  function beginComposition() {
+    operationComposition++;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      operationComposition = Math.max(0, operationComposition - 1);
+    };
   }
 
   function renderCatalog() {
     const host = $('chapter-catalog');
     if (!host) return;
-    const nextSignature = workspaceMeta?.mode === 'chapter-workspace'
-      ? JSON.stringify([workspaceMeta.sourceWorkId, workspaceMeta.loadedChapterIds, workspaceMeta.catalog])
-      : 'full-work';
-    if (catalogSignature === nextSignature) return;
-    catalogSignature = nextSignature;
-    host.replaceChildren();
-    if (workspaceMeta?.mode !== 'chapter-workspace') { host.hidden = true; return; }
-    host.hidden = false;
-    const title = document.createElement('div'); title.className = 'chapter-catalog-title'; title.textContent = '作品内の章'; host.append(title);
-    const loaded = new Set(workspaceMeta.loadedChapterIds);
-    for (const item of workspaceMeta.catalog.slice().sort((a, b) => a.order - b.order)) {
+    const chapterMode = workspaceMeta?.mode === 'chapter-workspace';
+    host.hidden = !chapterMode;
+    if (!chapterMode) { host.replaceChildren(); return; }
+    const list = document.createElement('div'); list.className = 'chapter-catalog-list';
+    const title = document.createElement('strong'); title.textContent = '章カタログ'; list.append(title);
+    for (const item of workspaceMeta.catalog) {
       const row = document.createElement('div');
-      const isLoaded = loaded.has(item.id);
-      row.className = `chapter-catalog-row${isLoaded ? ' chapter-catalog-loaded' : ' chapter-catalog-unloaded'}`;
-      row.dataset.chapterId = item.id;
-      const info = document.createElement('div');
-      const name = document.createElement('strong'); name.textContent = item.title || '無題の章';
-      const meta = document.createElement('small'); meta.textContent = `${item.episodeCount}話 · ${item.textLength.toLocaleString('ja-JP')}文字`;
-      info.append(name, meta); row.append(info);
-      const action = document.createElement('button'); action.type = 'button'; action.className = 'quiet';
-      if (isLoaded) { action.textContent = '読み込み済み'; action.disabled = true; }
-      else {
-        action.textContent = '章ZIPを開く';
-        action.title = 'この章のデータは読み込まれていません';
-        action.addEventListener('click', () => requestChapterImport(item.id));
-      }
-      row.append(action); host.append(row);
+      const loaded = workspaceMeta.loadedChapterIds.includes(item.id);
+      row.className = `chapter-catalog-row${loaded ? ' loaded' : ' unloaded'}`;
+      const mark = document.createElement('span'); mark.textContent = loaded ? '編集中' : '未読込';
+      const text = document.createElement('span'); text.textContent = item.title || '無題の章';
+      row.append(mark, text); list.append(row);
     }
+    host.replaceChildren(list);
   }
 
   function ensureReadonlyNote(host, className, text) {
@@ -247,7 +197,7 @@
       const importButton = $('import-button');
       if (importButton) {
         importButton.disabled = false;
-        const text = chapterMode ? 'マスター作品ZIPを開く' : 'シリーズを切り替える';
+        const text = chapterMode ? 'マスター作品ZIPを開く' : '作品ZIPを開く';
         if (importButton.textContent !== text) importButton.textContent = text;
       }
       const seriesImportButton = $('import-series-button'); if (seriesImportButton) seriesImportButton.disabled = chapterMode;
@@ -283,56 +233,35 @@
         finishBase();
       };
     },
-    getWorkspaceMeta: () => clone(workspaceMeta),
-    exportChapter
+    getWorkspaceMeta: () => workspaceMeta,
+    isChapterWorkspace: () => workspaceMeta?.mode === 'chapter-workspace',
+    assertFileOperationReady,
+    exportChapter,
+    importChapter
   };
-  root.NovelWorkspace = Object.freeze(wrappedWorkspace);
+  root.NovelWorkspace = wrappedWorkspace;
 
-  document.addEventListener('compositionstart', () => { compositionDepth++; }, true);
-  document.addEventListener('compositionend', () => { compositionDepth = Math.max(0, compositionDepth - 1); }, true);
-
-  $('import-chapter-button')?.addEventListener('click', () => requestChapterImport(null));
+  $('import-chapter-button')?.addEventListener('click', () => $('import-chapter-file')?.click());
   $('import-chapter-file')?.addEventListener('change', () => {
-    const input = $('import-chapter-file'), file = input.files?.[0], expected = expectedImportChapterId;
-    expectedImportChapterId = null; input.value = '';
-    void importChapterFile(file, expected);
+    const input = $('import-chapter-file'); const file = input?.files?.[0]; if (input) input.value = ''; if (file) void importChapter(file);
   });
   $('export-archive')?.addEventListener('click', event => {
     if (workspaceMeta?.mode !== 'chapter-workspace') return;
-    event.preventDefault(); event.stopImmediatePropagation();
-    void exportChapter(workspaceMeta.loadedChapterIds[0]);
-  }, true);
+    event.preventDefault(); event.stopImmediatePropagation(); void exportChapter();
+  }, { capture: true });
   document.addEventListener('keydown', event => {
-    if (workspaceMeta?.mode !== 'chapter-workspace' || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') return;
-    event.preventDefault(); event.stopImmediatePropagation();
-    void exportChapter(workspaceMeta.loadedChapterIds[0]);
-  }, true);
+    if (workspaceMeta?.mode !== 'chapter-workspace' || event.isComposing || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') return;
+    event.preventDefault(); event.stopImmediatePropagation(); void exportChapter();
+  }, { capture: true });
+  document.addEventListener('compositionstart', () => { operationComposition++; }, { capture: true });
+  document.addEventListener('compositionend', () => { operationComposition = Math.max(0, operationComposition - 1); }, { capture: true });
 
-  const observer = new MutationObserver(() => applyModeUi());
-  observer.observe(document.body, { subtree: true, childList: true });
-  baseWorkspace.subscribe(event => { if (event.reason === 'package') void refreshWorkspaceMeta(); else applyModeUi(); });
-
-  for (const id of ['tab-plot', 'tab-characters']) { const button = $(id); if (button) button.disabled = true; }
   void (async () => {
     try {
-      await waitForAppReady();
-      const db = await ensureControllerDb();
-      workspaceMeta = await root.NovelStorage.loadWorkspaceMeta(db);
-      const opened = root.sessionStorage?.getItem('fumizukue.chapter-workspace.opened');
-      if (opened) { root.sessionStorage.removeItem('fumizukue.chapter-workspace.opened'); toast(`章ワークスペース「${opened}」を開きました。`); }
+      await refreshMeta();
       applyModeUi();
-    } catch (error) {
-      console.error('章ワークスペース情報を読み込めませんでした。', error);
-      toast(`章ワークスペース情報を読み込めませんでした：${error?.message || error}`);
-    } finally {
-      for (const id of ['tab-plot', 'tab-characters']) { const button = $(id); if (button) button.disabled = false; }
-    }
+      observer = new MutationObserver(() => applyModeUi());
+      observer.observe(document.body, { childList: true, subtree: true });
+    } catch (error) { console.error(error); }
   })();
-
-  root.NovelChapterWorkspace = Object.freeze({
-    getWorkspaceMeta: () => clone(workspaceMeta),
-    exportChapter,
-    importChapterFile,
-    refreshWorkspaceMeta
-  });
 })(globalThis);
