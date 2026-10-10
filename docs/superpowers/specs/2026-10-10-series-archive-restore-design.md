@@ -1,6 +1,6 @@
 # Series Archive Restore Design
 
-Status: Proposed
+Status: Accepted
 Date: 2026-10-10
 
 ## 1. Purpose
