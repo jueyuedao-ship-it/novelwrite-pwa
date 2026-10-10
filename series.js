@@ -8,7 +8,7 @@
   let activeMeta = null;
   let saveTimer = null;
   let chapterMode = false;
-  let workActionBypass = null;
+  let workExportBypass = false;
   let seriesArchivePromise = null;
   let seriesOperation = false;
 
@@ -105,15 +105,6 @@
     else await render();
   }
 
-  async function switchSeries(seriesId) {
-    await withSeriesOperation(async () => {
-      await assertFullWorkMode();
-      await waitForEditorIdle();
-      await root.NovelStorage.setActiveSeries(await seriesDb(), seriesId);
-      location.reload();
-    });
-  }
-
   async function createSeries() {
     await withSeriesOperation(async () => {
       await assertFullWorkMode();
@@ -133,7 +124,10 @@
       seriesArchivePromise = import(new URL('./series-archive.js', location.href).href).then(() => {
         if (!root.NovelSeriesArchive) throw new Error('シリーズZIP処理モジュールを読み込めませんでした。');
         return root.NovelSeriesArchive;
-      }).catch(error => { seriesArchivePromise = null; throw error; });
+      }).catch(error => {
+        seriesArchivePromise = null;
+        throw error;
+      });
     }
     return seriesArchivePromise;
   }
@@ -161,14 +155,13 @@
     });
   }
 
-  function invokeWorkAction(kind) {
+  function invokeWorkExport() {
     if (chapterMode) return;
-    const id = kind === 'export' ? 'export-archive' : 'import-button';
-    const control = $(id);
+    const control = $('export-archive');
     if (!control) return;
-    workActionBypass = kind;
+    workExportBypass = true;
     control.click();
-    queueMicrotask(() => { if (workActionBypass === kind) workActionBypass = null; });
+    queueMicrotask(() => { workExportBypass = false; });
   }
 
   function workCard(work, isActive, canDelete, canManage) {
@@ -181,6 +174,7 @@
     const summary = document.createElement('p');
     summary.textContent = work.summary || '概要はまだありません。';
     body.append(title, summary);
+
     const actions = document.createElement('div');
     actions.className = 'series-work-actions';
     if (isActive) {
@@ -197,6 +191,7 @@
       open.addEventListener('click', () => void selectWork(work.id).catch(error => toast(error.message)));
       actions.append(open);
     }
+
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.className = 'quiet danger';
@@ -212,20 +207,24 @@
     if ($('series-export-work') && $('series-import-work')) return;
     const heading = document.querySelector('#series-settings-panel .series-list-heading');
     if (!heading) return;
+
     const actions = document.createElement('div');
     actions.className = 'series-archive-actions';
+
     const exportButton = document.createElement('button');
     exportButton.id = 'series-export-work';
     exportButton.type = 'button';
     exportButton.className = 'quiet';
     exportButton.textContent = '現在の作品ZIPで保存';
-    exportButton.addEventListener('click', () => invokeWorkAction('export'));
+    exportButton.addEventListener('click', invokeWorkExport);
+
     const importButton = document.createElement('button');
     importButton.id = 'series-import-work';
     importButton.type = 'button';
     importButton.className = 'quiet';
     importButton.textContent = '作品ZIP / 旧JSONを開く';
-    importButton.addEventListener('click', () => invokeWorkAction('import'));
+    importButton.addEventListener('click', () => $('import-button')?.click());
+
     actions.append(exportButton, importButton);
     heading.append(actions);
   }
@@ -251,7 +250,10 @@
     let canManage = true;
     let modeMessage = '';
     try { await assertFullWorkMode(); }
-    catch (error) { canManage = false; modeMessage = error?.message || String(error); }
+    catch (error) {
+      canManage = false;
+      modeMessage = error?.message || String(error);
+    }
 
     ensureWorkArchiveControls();
     $('series-title').value = activeSeries.title || '';
@@ -275,87 +277,20 @@
       void root.NovelStorage.updateSeries(db, activeSeries.id, {
         title: $('series-title').value,
         summary: $('series-summary').value
-      }).then(value => { activeSeries = value; }).catch(error => toast(error.message));
+      }).then(value => {
+        activeSeries = value;
+      }).catch(error => toast(error.message));
     }, 350);
   }
 
-  function ensureSeriesSwitchDialog() {
-    let dialog = $('series-switch-dialog');
-    if (dialog) return dialog;
-    dialog = document.createElement('dialog');
-    dialog.id = 'series-switch-dialog';
-    dialog.className = 'series-switch-dialog';
-    dialog.setAttribute('aria-labelledby', 'series-switch-title');
-    const heading = document.createElement('div');
-    heading.className = 'series-switch-heading';
-    const title = document.createElement('h2');
-    title.id = 'series-switch-title';
-    title.textContent = 'シリーズを切り替える';
-    const close = document.createElement('button');
-    close.type = 'button';
-    close.className = 'quiet';
-    close.textContent = '閉じる';
-    close.addEventListener('click', () => dialog.close());
-    heading.append(title, close);
-    const list = document.createElement('div');
-    list.id = 'series-switch-list';
-    list.className = 'series-switch-list';
-    const add = document.createElement('button');
-    add.id = 'series-switch-add';
-    add.type = 'button';
-    add.className = 'primary';
-    add.textContent = '＋ 新しいシリーズ';
-    add.addEventListener('click', () => { dialog.close(); void createSeries().catch(error => toast(error.message)); });
-    dialog.append(heading, list, add);
-    $('app')?.append(dialog);
-    return dialog;
-  }
-
-  async function openSeriesChooser() {
-    await assertFullWorkMode();
-    const store = await seriesDb();
-    const current = await root.NovelStorage.getWorkspaceMeta(store);
-    const series = await root.NovelStorage.listSeries(store);
-    const dialog = ensureSeriesSwitchDialog();
-    const list = $('series-switch-list');
-    const rows = [];
-    for (const item of series) {
-      const works = await root.NovelStorage.listWorks(store, item.id);
-      const row = document.createElement('div');
-      row.className = `series-switch-row${item.id === current?.activeSeriesId ? ' active' : ''}`;
-      const copy = document.createElement('div');
-      const title = document.createElement('strong');
-      title.textContent = item.title || '無題のシリーズ';
-      const meta = document.createElement('small');
-      meta.textContent = `${works.length}作品`;
-      copy.append(title, meta);
-      row.append(copy);
-      if (item.id === current?.activeSeriesId) {
-        const badge = document.createElement('span');
-        badge.className = 'series-active-badge';
-        badge.textContent = '現在のシリーズ';
-        row.append(badge);
-      } else {
-        const open = document.createElement('button');
-        open.type = 'button';
-        open.className = 'primary';
-        open.textContent = '開く';
-        open.addEventListener('click', () => { dialog.close(); void switchSeries(item.id).catch(error => toast(error.message)); });
-        row.append(open);
-      }
-      rows.push(row);
-    }
-    list.replaceChildren(...rows);
-    dialog.showModal();
-  }
-
   function setTopbarLabels() {
-    const switchButton = $('import-button');
+    const importButton = $('import-button');
     const resetButton = $('reset');
     const exportButton = $('export-archive');
-    if (switchButton) {
-      switchButton.textContent = 'シリーズを切り替える';
-      switchButton.disabled = chapterMode;
+
+    if (importButton) {
+      importButton.textContent = chapterMode ? 'マスター作品ZIPを開く' : '作品ZIPを開く';
+      importButton.disabled = false;
     }
     if (resetButton) {
       resetButton.textContent = '新しいシリーズ';
@@ -370,7 +305,9 @@
     try { await refreshChapterMode(); }
     catch { chapterMode = false; }
     setTopbarLabels();
-    if ($('tab-plot')?.getAttribute('aria-selected') === 'true') void render().catch(error => toast(error.message));
+    if ($('tab-plot')?.getAttribute('aria-selected') === 'true') {
+      void render().catch(error => toast(error.message));
+    }
   }
 
   function renderIfPlotActive() {
@@ -379,16 +316,11 @@
   }
 
   function interceptTopbar() {
-    $('import-button')?.addEventListener('click', event => {
-      if (workActionBypass === 'import') { workActionBypass = null; return; }
-      if (chapterMode) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      void openSeriesChooser().catch(error => toast(error.message));
-    }, { capture: true });
-
     $('export-archive')?.addEventListener('click', event => {
-      if (workActionBypass === 'export') { workActionBypass = null; return; }
+      if (workExportBypass) {
+        workExportBypass = false;
+        return;
+      }
       if (chapterMode) return;
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -410,7 +342,6 @@
     }, { capture: true });
   }
 
-  ensureSeriesSwitchDialog();
   ensureWorkArchiveControls();
   interceptTopbar();
   setTopbarLabels();
