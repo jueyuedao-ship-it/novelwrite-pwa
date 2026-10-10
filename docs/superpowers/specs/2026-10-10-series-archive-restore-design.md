@@ -75,6 +75,8 @@ The outer manifest has this shape:
 
 Each nested ZIP must remain a valid `fumizukue-work-archive` v1 archive.
 
+The current exporter orders `works` by Work ID ascending. The importer treats that deterministic ordering as part of the v1 contract.
+
 ## 5. Restore semantics
 
 ### 5.1 New Series ID
@@ -103,7 +105,7 @@ If the user cancels, no write occurs.
 
 IDs in a restored Series are authoritative and are not remapped.
 
-Before write, restore must reject the archive if any global ID that belongs to the incoming Series is already owned by a Work outside the target Series.
+Before replacement confirmation and before write, restore must reject the archive if any global ID that belongs to the incoming Series is already owned by a Work outside the target Series.
 
 The collision check covers all IDs represented by the storage `idRegistry`, including:
 
@@ -137,26 +139,33 @@ The import path performs the following steps in order:
 4. Require `formatVersion === 1`.
 5. Validate `series.id`, `series.title`, and `series.summary`.
 6. Require a non-empty `works` array.
-7. Require unique Work IDs, unique paths, and canonical paths in exact sequence: `works/0001.zip`, `works/0002.zip`, ...
-8. Require every `sha256` to be a lowercase 64-character hex digest.
-9. Require `activeWorkId` to match exactly one declared Work.
-10. Require the outer ZIP to contain only `manifest.json` plus declared Work ZIP paths.
-11. Verify SHA-256 for every nested Work ZIP before parsing it.
-12. Parse each nested ZIP with `NovelArchiveCommon.readArchive()`.
-13. Validate each nested ZIP through the existing `NovelArchive.importArchiveRead()` path.
-14. Require the imported nested Work ID to equal its outer manifest Work ID.
-15. Require the imported nested Work title to equal the title declared in the outer manifest.
-16. Return a fully validated in-memory restore value containing Series metadata, `activeWorkId`, and validated Work packages.
+7. Require unique Work IDs and require the manifest Work list to be sorted by Work ID ascending.
+8. Require unique paths and canonical paths in exact sequence: `works/0001.zip`, `works/0002.zip`, ...
+9. Require every `sha256` to be a lowercase 64-character hex digest.
+10. Require `activeWorkId` to match exactly one declared Work.
+11. Require the outer ZIP to contain only `manifest.json` plus declared Work ZIP paths.
+12. Verify SHA-256 for every nested Work ZIP before parsing it.
+13. Parse each nested ZIP with `NovelArchiveCommon.readArchive()`.
+14. Validate each nested ZIP through the existing `NovelArchive.importArchiveRead()` path.
+15. Require the imported nested Work ID to equal its outer manifest Work ID.
+16. Require the imported nested Work title to equal the title declared in the outer manifest.
+17. Return a fully validated in-memory restore value containing Series metadata, `activeWorkId`, and validated Work packages.
 
 No IndexedDB write may occur before all steps succeed.
 
 ## 7. Storage architecture
 
-### 7.1 New restore API
+### 7.1 Restore inspection and commit APIs
 
-`series-storage.js` gains a dedicated atomic restore API. Suggested shape:
+`series-storage.js` gains a read-only restore preflight plus a dedicated atomic restore API. Suggested shapes:
 
 ```js
+inspectSeriesRestore(db, {
+  series,
+  activeWorkId,
+  works
+})
+
 restoreSeries(db, {
   series,
   activeWorkId,
@@ -164,7 +173,17 @@ restoreSeries(db, {
 })
 ```
 
-The input is trusted only after validation by the Series archive module, but the storage API still validates required IDs and package structure defensively.
+`inspectSeriesRestore()`:
+
+- performs defensive package/ID validation;
+- determines whether the operation is `create` or `replace`;
+- identifies the current target-Series Work IDs when replacing;
+- checks incoming global IDs against local `idRegistry` ownership;
+- rejects collisions owned by another Series;
+- performs no writes;
+- returns enough information for the UI to decide whether replacement confirmation is needed.
+
+`restoreSeries()` must not trust an earlier inspection as a lock. It repeats all assumptions that can change concurrently inside the write transaction before destructive mutation.
 
 ### 7.2 One transaction
 
@@ -211,19 +230,19 @@ The exact numeric increment can reuse the existing `savedRevision` rules, but te
 
 ## 8. Collision detection
 
-The storage layer must perform two levels of collision protection.
+The storage layer performs two levels of collision protection.
 
-### 8.1 Preflight
+### 8.1 Read-only preflight
 
-Before opening the write transaction, gather the incoming global IDs and compare them with local `idRegistry` ownership.
+Before replacement confirmation, `inspectSeriesRestore()` gathers incoming global IDs and compares them with local `idRegistry` ownership.
 
 Allow an existing ID only when its owner Work currently belongs to the target Series being replaced.
 
-Reject any collision owned by another Series with a clear error before destructive confirmation/write where possible.
+Reject any collision owned by another Series with a clear error before the destructive confirmation is shown.
 
 ### 8.2 Transaction-time re-check
 
-Because another tab may modify IndexedDB between preflight and commit, the write transaction must re-check relevant registry ownership before deletion/writes.
+Because another tab may modify IndexedDB between preflight and commit, `restoreSeries()` re-checks relevant registry ownership and target-Series membership inside the write transaction.
 
 If assumptions changed, abort with a conflict error rather than partially restoring.
 
@@ -237,9 +256,9 @@ Normal full-work mode gains an explicit control labeled:
 
 This control belongs with Series-level operations, not with the standalone Work ZIP controls in Plot > Series settings.
 
-A dedicated hidden file input should accept `.zip` / `application/zip`.
+A dedicated hidden file input accepts `.zip` / `application/zip`.
 
-The existing top-level Work ZIP control and Plot Work ZIP controls remain available according to their current UI contract.
+The existing Work ZIP open/export controls remain available according to their current UI contract. Series ZIP import does not replace the standalone Work ZIP flow.
 
 ### 9.2 Import flow
 
@@ -249,14 +268,14 @@ On file selection:
 2. Assert full-work mode.
 3. Wait for current editor persistence to become idle.
 4. Load and fully validate the Series ZIP.
-5. Inspect whether the Series ID already exists.
-6. If it exists, show an explicit replacement confirmation that identifies the Series and explains that all local Works in that Series will be replaced.
+5. Call `inspectSeriesRestore()` to perform local collision preflight and determine create/replace mode.
+6. If replacing, show an explicit confirmation that identifies the Series and explains that all local Works in that Series will be replaced.
 7. If cancelled, stop with no write.
-8. Call the atomic storage restore API.
+8. Call atomic `restoreSeries()`, which re-checks concurrent assumptions inside its transaction.
 9. Show success feedback.
 10. Reload the page so the restored `activeWorkId` becomes the active editor state.
 
-Validation errors must be shown before the replacement confirmation whenever possible.
+Archive and cross-Series collision errors are shown before replacement confirmation.
 
 ### 9.3 Chapter workspace
 
@@ -278,7 +297,8 @@ User-visible failures should distinguish these classes where practical:
 - nested ZIP checksum mismatch;
 - invalid nested Work ZIP;
 - outer/nested Work metadata mismatch;
-- duplicate Work IDs/paths;
+- duplicate or unsorted Work IDs;
+- duplicate/non-canonical Work paths;
 - invalid `activeWorkId`;
 - ID conflict with another Series;
 - concurrent database change / stale assumptions;
@@ -297,10 +317,10 @@ Expected changes:
   - expose or internally reuse a transaction-local validated Work row writer;
   - preserve existing single-Work save behavior.
 - `series-storage.js`
-  - add collision preflight and atomic `restoreSeries()`;
-  - manage replacement deletion, revisions, Series metadata, and workspace activation.
+  - add `inspectSeriesRestore()` and atomic `restoreSeries()`;
+  - manage collision checks, replacement deletion, revisions, Series metadata, and workspace activation.
 - `series.js`
-  - own Series ZIP import orchestration, confirmation, busy state, and reload.
+  - own Series ZIP import orchestration, preflight, confirmation, busy state, and reload.
 - `index.html`
   - add Series ZIP open control/input if needed by the chosen UI placement.
 - `series.css` / `styles.css`
@@ -316,7 +336,7 @@ Expected changes:
 
 No database version bump is required.
 
-The feature uses existing stores and indexes. `restoreSeries()` operates on the current schema.
+The feature uses existing stores and indexes. `inspectSeriesRestore()` and `restoreSeries()` operate on the current schema.
 
 ## 13. Security and integrity constraints
 
@@ -333,7 +353,7 @@ Tests are written first for each behavior.
 ### Series archive tests
 
 - valid multi-Work Series ZIP imports and returns validated packages;
-- Work ordering and canonical `works/NNNN.zip` paths are enforced;
+- manifest Work ID ordering and canonical `works/NNNN.zip` paths are enforced;
 - checksum tampering is rejected;
 - nested invalid Work ZIP is rejected;
 - nested Work ID mismatch is rejected;
@@ -345,9 +365,11 @@ Tests are written first for each behavior.
 
 ### Storage tests
 
+- restore inspection reports create vs replace without writing;
+- inspection rejects another Series' Work/global ID before confirmation;
 - restore of a new Series writes all Works and activates `activeWorkId`;
 - replacement of an existing matching Series deletes only that Series' old Works;
-- unrelated Series remain byte/record-equivalent;
+- unrelated Series remain record-equivalent;
 - collision with another Series' Work ID is rejected;
 - collision with another Series' child/global ID is rejected;
 - same-Series IDs are allowed during replacement;
@@ -355,14 +377,15 @@ Tests are written first for each behavior.
 - restored Series has correct `lastActiveWorkId`;
 - replacement advances Work revisions;
 - stale saves against pre-restore revisions are rejected;
-- concurrent collision changes are detected inside the transaction.
+- concurrent collision changes after inspection are detected inside the transaction.
 
 ### UI tests
 
 - normal mode exposes `シリーズZIPを開く`;
 - valid new-Series restore proceeds without replacement confirmation;
 - existing-Series restore requires explicit confirmation;
-- cancellation makes no storage call;
+- cross-Series collision is reported before replacement confirmation;
+- cancellation makes no restore call;
 - successful restore reloads into the manifest `activeWorkId`;
 - chapter workspace disables Series ZIP restore while preserving the master Work ZIP exit path.
 
@@ -382,10 +405,10 @@ The feature is complete when all of the following are true:
 2. All Works and their nested records/images are restored with original IDs.
 3. The archive's `activeWorkId` is active after successful restore.
 4. Restoring a Series whose ID already exists requires explicit replacement confirmation.
-5. Replacement changes only that Series and leaves all other Series untouched.
-6. Any collision with IDs owned by another Series rejects the restore.
+5. Cross-Series ID collisions are rejected before that replacement confirmation.
+6. Replacement changes only that Series and leaves all other Series untouched.
 7. Any invalid outer/nested archive or checksum rejects the restore before IndexedDB mutation.
-8. Any write failure rolls back the entire restore.
+8. Any write failure or concurrent collision rolls back the entire restore.
 9. Existing Work ZIP and chapter ZIP formats and workflows remain compatible.
 10. Chapter-workspace restrictions remain intact and the master Work ZIP exit path still works.
 11. No destructive IndexedDB migration or version bump is introduced.
@@ -398,11 +421,11 @@ Implementation follows TDD in this order:
 
 1. Series archive read/validation tests and implementation.
 2. Transaction-local Work row writer refactor with existing storage regressions green.
-3. Atomic Series restore and collision/revision tests.
+3. Restore inspection plus atomic Series restore and collision/revision tests.
 4. Series ZIP import UI and replacement confirmation.
 5. Chapter-workspace and PWA integration.
 6. README and compatibility regression pass.
-7. Rebase/integrate latest `main` if needed.
+7. Integrate latest `main` if needed.
 8. PR review and CI.
 9. Merge to `main` only after all gates pass.
 10. Verify post-merge CI and GitHub Pages deployment.
