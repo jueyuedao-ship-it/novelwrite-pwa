@@ -1,0 +1,65 @@
+name: agent-integrate-main-series-restore
+
+on:
+  push:
+    branches:
+      - feat/series-archive-restore
+    paths:
+      - scripts/agent-integrate-series-ordering.cjs
+      - .github/workflows/agent-integrate-main-series-restore.yml
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Merge latest main and resolve expected test conflicts
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          set +e
+          git merge --no-commit --no-ff origin/main
+          merge_status=$?
+          set -e
+          if [ "$merge_status" -ne 0 ]; then
+            conflicts="$(git diff --name-only --diff-filter=U | sort)"
+            expected="$(printf '%s\n' tests/series-archive.test.js tests/series-plot-ui.test.js | sort)"
+            if [ "$conflicts" != "$expected" ]; then
+              echo "Unexpected merge conflicts:"
+              echo "$conflicts"
+              exit 1
+            fi
+            git checkout --ours tests/series-archive.test.js tests/series-plot-ui.test.js
+            git add tests/series-archive.test.js tests/series-plot-ui.test.js
+          fi
+          test -z "$(git diff --name-only --diff-filter=U)"
+      - name: Align restore with user-controlled Work order
+        run: node scripts/agent-integrate-series-ordering.cjs
+      - name: Verify integrated branch
+        run: |
+          npm install --ignore-scripts
+          npm test
+          node --check series-storage.js
+          node --check series-ordering.js
+          node --check series-schema.js
+          node --check workspace-storage.js
+          node --check series.js
+          node --check series-archive.js
+          node --check storage.js
+          node --check app.js
+          node --check chapter-workspace-controller.js
+          node --check workspace-loader.js
+      - name: Commit and push integration
+        run: |
+          git add .github/workflows/test.yml index.html series-archive.js series-ordering.js series-storage.js series.js sw.js tests docs
+          git commit -m "merge: integrate series work ordering with archive restore"
+          git push origin HEAD:feat/series-archive-restore
