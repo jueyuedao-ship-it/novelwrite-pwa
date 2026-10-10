@@ -35,7 +35,7 @@ test('plot series settings expose existing single-work archive handlers through 
   assert.match(source, /series-import-work/);
   assert.match(source, /現在の作品ZIPで保存/);
   assert.match(source, /作品ZIP \/ 旧JSONを開く/);
-  assert.doesNotMatch(source, /workActionBypass/);
+  assert.match(source, /importButton\.addEventListener\(['"]click['"],[\s\S]*\$\(['"]import-button['"]\)\?\.click\(\)/);
 });
 
 test('series export lazy-loads the series archive and fully loads every work before download', () => {
