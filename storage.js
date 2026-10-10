@@ -247,6 +247,53 @@
     return (left.order ?? 0) - (right.order ?? 0) || sequenceOf(left) - sequenceOf(right) || String(left.id).localeCompare(String(right.id));
   }
 
+  function writeValidatedWorkToTransaction(tx, value, { revision, workRecordExtras = {} } = {}) {
+    if (!Number.isSafeInteger(revision) || revision < 1) throw new Error('作品revisionが不正です。');
+    if (!value || typeof value !== 'object' || !value.work || !Array.isArray(value.images)) {
+      throw new Error('検証済み作品パッケージが必要です。');
+    }
+    const work = value.work;
+    tx.objectStore('works').put({
+      ...workRecordExtras,
+      schemaVersion: work.schemaVersion,
+      id: work.id,
+      title: work.title,
+      summary: work.summary,
+      _revision: revision
+    });
+    const idRegistry = tx.objectStore('idRegistry');
+    putRegistry(idRegistry, work.id, work.id, 'work', 'work', work.id);
+    work.chapters.forEach((chapter, index) => {
+      tx.objectStore('chapters').put({ ...chapter, _sequence: index });
+      putRegistry(idRegistry, chapter.id, work.id, 'chapter', 'chapter', chapter.id);
+    });
+    work.episodes.forEach((episode, index) => {
+      const { lines, ...metadata } = episode;
+      tx.objectStore('episodes').put({ ...metadata, _sequence: index });
+      tx.objectStore('episodeBodies').put({ id: episode.id, workId: episode.workId, lines });
+      putRegistry(idRegistry, episode.id, work.id, 'episode', 'episode', episode.id);
+      addLineCharacterRefs(tx.objectStore('lineCharacterRefs'), episode.id, episode.workId, lines);
+      for (const line of lines) putRegistry(idRegistry, line.id, work.id, 'line', 'episodeLine', episode.id);
+    });
+    work.scenes.forEach((scene, index) => {
+      tx.objectStore('scenes').put({ ...scene, _sequence: index, scopeKey: sceneScopeKey(scene) });
+      putRegistry(idRegistry, scene.id, work.id, 'scene', 'scene', scene.id);
+    });
+    work.characters.forEach((character, index) => {
+      tx.objectStore('characters').put({ ...character, _sequence: index });
+      putRegistry(idRegistry, character.id, work.id, 'character', 'character', character.id);
+      for (const field of character.customFields) putRegistry(idRegistry, field.id, work.id, 'customField', 'customField', character.id);
+    });
+    const payloadById = new Map(value.images.map(image => [image.id, image]));
+    work.images.forEach((metadata, index) => {
+      tx.objectStore('images').put({ ...metadata, _sequence: index });
+      putRegistry(idRegistry, metadata.id, work.id, 'image', 'image', metadata.id);
+      const payload = payloadById.get(metadata.id);
+      if (!payload?.blob) throw new Error('作品から参照されている画像本体がありません。');
+      tx.objectStore('imageBlobs').put({ id: metadata.id, workId: work.id, mimeType: metadata.mimeType, blob: payload.blob });
+    });
+  }
+
   async function saveWork(store, rawPackage) {
     if (!packageTools) throw new Error('作品保存モジュールが読み込まれていません。');
     const value = await packageTools.validatePackage(rawPackage);
@@ -261,38 +308,7 @@
         if (expectedRevision !== undefined && expectedRevision !== currentRevision) throw conflictError();
         nextRevision = currentRevision + 1;
         for (const name of STORE_NAMES) tx.objectStore(name).clear();
-        const work = value.work;
-        tx.objectStore('works').put({ schemaVersion: work.schemaVersion, id: work.id, title: work.title, summary: work.summary, _revision: nextRevision });
-        const idRegistry = tx.objectStore('idRegistry');
-        putRegistry(idRegistry, work.id, work.id, 'work', 'work', work.id);
-        work.chapters.forEach((chapter, index) => {
-          tx.objectStore('chapters').put({ ...chapter, _sequence: index });
-          putRegistry(idRegistry, chapter.id, work.id, 'chapter', 'chapter', chapter.id);
-        });
-        work.episodes.forEach((episode, index) => {
-          const { lines, ...metadata } = episode;
-          tx.objectStore('episodes').put({ ...metadata, _sequence: index });
-          tx.objectStore('episodeBodies').put({ id: episode.id, workId: episode.workId, lines });
-          putRegistry(idRegistry, episode.id, work.id, 'episode', 'episode', episode.id);
-          addLineCharacterRefs(tx.objectStore('lineCharacterRefs'), episode.id, episode.workId, lines);
-          for (const line of lines) putRegistry(idRegistry, line.id, work.id, 'line', 'episodeLine', episode.id);
-        });
-        work.scenes.forEach((scene, index) => {
-          tx.objectStore('scenes').put({ ...scene, _sequence: index, scopeKey: sceneScopeKey(scene) });
-          putRegistry(idRegistry, scene.id, work.id, 'scene', 'scene', scene.id);
-        });
-        work.characters.forEach((character, index) => {
-          tx.objectStore('characters').put({ ...character, _sequence: index });
-          putRegistry(idRegistry, character.id, work.id, 'character', 'character', character.id);
-          for (const field of character.customFields) putRegistry(idRegistry, field.id, work.id, 'customField', 'customField', character.id);
-        });
-        const payloadById = new Map(value.images.map(image => [image.id, image]));
-        work.images.forEach((metadata, index) => {
-          tx.objectStore('images').put({ ...metadata, _sequence: index });
-          putRegistry(idRegistry, metadata.id, work.id, 'image', 'image', metadata.id);
-          const payload = payloadById.get(metadata.id);
-          tx.objectStore('imageBlobs').put({ id: metadata.id, workId: work.id, mimeType: metadata.mimeType, blob: payload.blob });
-        });
+        writeValidatedWorkToTransaction(tx, value, { revision: nextRevision });
       } catch (error) {
         failure = error;
         try { tx.abort(); } catch { /* A request may already have aborted the transaction. */ }
@@ -927,7 +943,7 @@
     return { workId };
   }
 
-  const api = { openStore, loadWork, loadWorkIndex, loadEpisode, loadScenes, loadImage, saveWork, saveChanges };
+  const api = { openStore, loadWork, loadWorkIndex, loadEpisode, loadScenes, loadImage, saveWork, saveChanges, writeValidatedWorkToTransaction };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.NovelStorage = api;
 })(globalThis);
