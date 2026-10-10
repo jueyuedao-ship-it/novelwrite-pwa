@@ -21,6 +21,33 @@ async function blobBytes(blob) {
   return new Uint8Array(await blob.arrayBuffer());
 }
 
+async function rewriteSeriesArchive(blob, { mutateManifest, mutateFiles, omitNames = [], extraEntries = [] } = {}) {
+  const read = await common.readArchive(blob);
+  const manifest = structuredClone(read.manifest);
+  const files = Object.fromEntries(Object.entries(read.files).map(([name, bytes]) => [name, new Uint8Array(bytes)]));
+  if (mutateManifest) await mutateManifest(manifest, files);
+  if (mutateFiles) await mutateFiles(files, manifest);
+  const omitted = new Set(omitNames);
+  const entries = [{ name: 'manifest.json', bytes: common.encodeJson(manifest) }];
+  for (const [name, bytes] of Object.entries(files)) {
+    if (name === 'manifest.json' || omitted.has(name)) continue;
+    entries.push({ name, bytes });
+  }
+  entries.push(...extraEntries);
+  return common.writeArchive(entries);
+}
+
+async function exportedSeries() {
+  const seriesArchive = require('../series-archive.js');
+  const series = { id: 'series-restore', title: '復元シリーズ', summary: 'バックアップ' };
+  const works = [packageWithId('work-b', '第二作'), packageWithId('work-a', '第一作')];
+  return {
+    seriesArchive,
+    series,
+    blob: await seriesArchive.exportSeriesArchive({ series, activeWorkId: 'work-b', works })
+  };
+}
+
 test('series archive wraps id-sorted valid work archives with hashes and active work metadata', async () => {
   const seriesArchive = require('../series-archive.js');
   const workZ = packageWithId('work-z', '終章');
@@ -97,16 +124,7 @@ test('series archive output contains only manifest and declared nested work zips
 });
 
 test('series archive imports a valid multi-work export into validated work packages', async () => {
-  const seriesArchive = require('../series-archive.js');
-  const series = { id: 'series-restore', title: '復元シリーズ', summary: 'バックアップ' };
-  const workB = packageWithId('work-b', '第二作');
-  const workA = packageWithId('work-a', '第一作');
-  const blob = await seriesArchive.exportSeriesArchive({
-    series,
-    activeWorkId: 'work-b',
-    works: [workB, workA]
-  });
-
+  const { seriesArchive, series, blob } = await exportedSeries();
   const restored = await seriesArchive.importSeriesArchive(blob);
 
   assert.deepEqual(restored.series, series);
@@ -115,10 +133,75 @@ test('series archive imports a valid multi-work export into validated work packa
   assert.deepEqual(restored.works.map(item => item.work.title), ['第一作', '第二作']);
 });
 
+test('series archive import rejects unsupported format, version, empty works, and foreign activeWorkId', async () => {
+  const { seriesArchive, blob } = await exportedSeries();
+  const unsupportedFormat = await rewriteSeriesArchive(blob, { mutateManifest: manifest => { manifest.format = 'foreign-series'; } });
+  const unsupportedVersion = await rewriteSeriesArchive(blob, { mutateManifest: manifest => { manifest.formatVersion = 2; } });
+  const empty = await rewriteSeriesArchive(blob, { mutateManifest: manifest => { manifest.works = []; } });
+  const foreignActive = await rewriteSeriesArchive(blob, { mutateManifest: manifest => { manifest.activeWorkId = 'work-missing'; } });
+
+  await assert.rejects(() => seriesArchive.importSeriesArchive(unsupportedFormat), /対応していない|形式/);
+  await assert.rejects(() => seriesArchive.importSeriesArchive(unsupportedVersion), /対応していない|形式/);
+  await assert.rejects(() => seriesArchive.importSeriesArchive(empty), /作品|空/);
+  await assert.rejects(() => seriesArchive.importSeriesArchive(foreignActive), /activeWorkId|作品一覧/);
+});
+
+test('series archive import enforces sorted unique work ids and canonical unique paths', async () => {
+  const { seriesArchive, blob } = await exportedSeries();
+  const unsorted = await rewriteSeriesArchive(blob, { mutateManifest: manifest => { manifest.works.reverse(); } });
+  const duplicateId = await rewriteSeriesArchive(blob, { mutateManifest: manifest => { manifest.works[1].id = manifest.works[0].id; } });
+  const duplicatePath = await rewriteSeriesArchive(blob, { mutateManifest: manifest => { manifest.works[1].path = manifest.works[0].path; } });
+  const nonCanonicalPath = await rewriteSeriesArchive(blob, { mutateManifest: manifest => { manifest.works[0].path = 'works/a.zip'; } });
+
+  await assert.rejects(() => seriesArchive.importSeriesArchive(unsorted), /並び順|作品一覧/);
+  await assert.rejects(() => seriesArchive.importSeriesArchive(duplicateId), /重複|作品ID/);
+  await assert.rejects(() => seriesArchive.importSeriesArchive(duplicatePath), /パス|作品一覧|重複/);
+  await assert.rejects(() => seriesArchive.importSeriesArchive(nonCanonicalPath), /作品一覧|パス/);
+});
+
+test('series archive import rejects missing, extra, malformed-hash, and checksum-mismatched entries', async () => {
+  const { seriesArchive, blob } = await exportedSeries();
+  const missing = await rewriteSeriesArchive(blob, { omitNames: ['works/0002.zip'] });
+  const extra = await rewriteSeriesArchive(blob, { extraEntries: [{ name: 'extra.txt', bytes: new Uint8Array([1]) }] });
+  const malformedHash = await rewriteSeriesArchive(blob, { mutateManifest: manifest => { manifest.works[0].sha256 = 'BAD'; } });
+  const checksumMismatch = await rewriteSeriesArchive(blob, {
+    mutateFiles: files => { files['works/0001.zip'][0] ^= 0xff; }
+  });
+
+  await assert.rejects(() => seriesArchive.importSeriesArchive(missing), /ファイル一覧|manifest/);
+  await assert.rejects(() => seriesArchive.importSeriesArchive(extra), /ファイル一覧|manifest/);
+  await assert.rejects(() => seriesArchive.importSeriesArchive(malformedHash), /作品一覧|チェックサム/);
+  await assert.rejects(() => seriesArchive.importSeriesArchive(checksumMismatch), /チェックサム/);
+});
+
+test('series archive import rejects invalid nested work archives and outer metadata mismatches', async () => {
+  const { seriesArchive, blob } = await exportedSeries();
+  const invalidNested = await rewriteSeriesArchive(blob, {
+    mutateFiles: async (files, manifest) => {
+      files['works/0001.zip'] = new Uint8Array([1, 2, 3, 4]);
+      manifest.works[0].sha256 = await common.sha256(files['works/0001.zip']);
+    }
+  });
+  const idMismatch = await rewriteSeriesArchive(blob, {
+    mutateManifest: manifest => {
+      manifest.works[0].id = 'work-0';
+      manifest.activeWorkId = 'work-0';
+    }
+  });
+  const titleMismatch = await rewriteSeriesArchive(blob, {
+    mutateManifest: manifest => { manifest.works[0].title = '別の作品名'; }
+  });
+
+  await assert.rejects(() => seriesArchive.importSeriesArchive(invalidNested), /ZIP|アーカイブ|不正|終端/);
+  await assert.rejects(() => seriesArchive.importSeriesArchive(idMismatch), /作品ID|manifest/);
+  await assert.rejects(() => seriesArchive.importSeriesArchive(titleMismatch), /作品名|manifest/);
+});
+
 test('browser series archive adapter lazy-loads its dependencies', () => {
   const fs = require('node:fs');
   const source = fs.readFileSync(require.resolve('../series-archive.js'), 'utf8');
   assert.match(source, /archive-common\.js/);
   assert.match(source, /archive\.js/);
   assert.match(source, /exportSeriesArchive/);
+  assert.match(source, /importSeriesArchive/);
 });
