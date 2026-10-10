@@ -1,0 +1,33 @@
+name: agent-finalize-series-restore
+
+on:
+  push:
+    branches:
+      - feat/series-archive-restore
+    paths:
+      - scripts/agent-finalize-series-restore.cjs
+      - .github/workflows/agent-finalize-series-restore.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply release updates
+        run: node scripts/agent-finalize-series-restore.cjs
+      - name: Commit release updates
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add sw.js index.html README.md docs/superpowers/specs/2026-10-10-series-archive-restore-design.md
+          git diff --cached --quiet && exit 0
+          git commit -m "docs: finalize series archive restore rollout"
+          git push origin HEAD:feat/series-archive-restore
