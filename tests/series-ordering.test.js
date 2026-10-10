@@ -72,6 +72,35 @@ test('series works receive stable order values, can move, and persist after reop
   }
 });
 
+test('autosave patches keep a reordered work in the same series position', async () => {
+  const name = dbName('autosave');
+  const workA = await legacyDatabase(name, '作品A');
+  const api = storage();
+  const db = await api.openStore({ indexedDB, name });
+  try {
+    const [series] = await api.listSeries(db);
+    const workB = NovelModel.createWork({ title: '作品B' });
+    const workC = NovelModel.createWork({ title: '作品C' });
+    await api.createWorkInSeries(db, series.id, packageOf(workB));
+    await api.createWorkInSeries(db, series.id, packageOf(workC));
+    await api.moveWork(db, workC.id, -1);
+
+    const indexC = await api.loadWorkIndex(db, workC.id);
+    await api.saveChanges(db, {
+      workId: workC.id,
+      work: { ...indexC.work, title: '作品C 改稿' }
+    });
+
+    assert.deepEqual(
+      (await api.listWorks(db, series.id)).map(item => [item.title, item.order]),
+      [['作品A', 0], ['作品C 改稿', 1], ['作品B', 2]]
+    );
+    assert.equal((await api.loadWork(db, workA.id)).work.title, '作品A');
+  } finally {
+    db.close();
+  }
+});
+
 test('replacing the active work keeps its series position and deleting compacts orders', async () => {
   const name = dbName('replace-delete');
   const workA = await legacyDatabase(name, '作品A');
