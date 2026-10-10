@@ -5,12 +5,13 @@ const path = require('node:path');
 
 const read = file => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
 
-test('topbar exposes work ZIP and chapter ZIP import without a series switch action', () => {
+test('topbar promotes import-button to work ZIP import without a series switch action', () => {
   const html = read('index.html');
   const source = read('series.js');
-  assert.match(html, /id=["']import-button["'][^>]*>作品ZIPを開く<\/button>/);
+  assert.match(html, /id=["']import-button["']/);
   assert.match(html, /id=["']import-chapter-button["'][^>]*>章ZIPを開く<\/button>/);
-  assert.doesNotMatch(html, /シリーズを切り替える/);
+  assert.match(source, /importButton\.textContent\s*=\s*chapterMode\s*\?\s*['"]マスター作品ZIPを開く['"]\s*:\s*['"]作品ZIPを開く['"]/);
+  assert.match(source, /importButton\.disabled\s*=\s*false/);
   assert.doesNotMatch(source, /シリーズを切り替える/);
   assert.doesNotMatch(source, /series-switch-dialog/);
   assert.doesNotMatch(source, /openSeriesChooser/);
