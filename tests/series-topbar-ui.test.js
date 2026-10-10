@@ -5,24 +5,22 @@ const path = require('node:path');
 
 const read = file => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
 
-test('series controller promotes stable topbar controls to series-level actions', () => {
+test('topbar exposes work ZIP and chapter ZIP import without a series switch action', () => {
+  const html = read('index.html');
   const source = read('series.js');
-  assert.match(source, /シリーズを切り替える/);
-  assert.match(source, /シリーズZIPで保存/);
-  assert.match(source, /新しいシリーズ/);
-  assert.match(source, /import-button/);
-  assert.match(source, /export-archive/);
-  assert.match(source, /reset/);
-  assert.match(source, /addEventListener\(['"]click['"],[\s\S]*capture|\{\s*capture:\s*true\s*\}/);
+  assert.match(html, /id=["']import-button["'][^>]*>作品ZIPを開く<\/button>/);
+  assert.match(html, /id=["']import-chapter-button["'][^>]*>章ZIPを開く<\/button>/);
+  assert.doesNotMatch(html, /シリーズを切り替える/);
+  assert.doesNotMatch(source, /シリーズを切り替える/);
+  assert.doesNotMatch(source, /series-switch-dialog/);
+  assert.doesNotMatch(source, /openSeriesChooser/);
 });
 
-test('series controller builds a chooser and switches through setActiveSeries', () => {
-  const source = read('series.js');
-  assert.match(source, /series-switch-dialog/);
-  assert.match(source, /listSeries/);
-  assert.match(source, /listWorks/);
-  assert.match(source, /setActiveSeries/);
-  assert.match(source, /現在のシリーズ/);
+test('work ZIP topbar control remains connected to the existing app import flow', () => {
+  const source = read('app.js');
+  assert.match(source, /\$\(['"]import-button['"]\)\.addEventListener\(['"]click['"],[\s\S]*\$\(['"]import-file['"]\)\.click\(\)/);
+  assert.match(source, /\$\(['"]import-file['"]\)\.addEventListener\(['"]change['"],[\s\S]*importFile\(file\)/);
+  assert.match(source, /async function importFile\(file\)/);
 });
 
 test('new series creation uses atomic storage API with one initial work', () => {
@@ -37,7 +35,7 @@ test('plot series settings expose existing single-work archive handlers through 
   assert.match(source, /series-import-work/);
   assert.match(source, /現在の作品ZIPで保存/);
   assert.match(source, /作品ZIP \/ 旧JSONを開く/);
-  assert.match(source, /workActionBypass/);
+  assert.doesNotMatch(source, /workActionBypass/);
 });
 
 test('series export lazy-loads the series archive and fully loads every work before download', () => {
@@ -52,7 +50,6 @@ test('chapter workspace leaves chapter ZIP export interception available while b
   const source = read('series.js');
   assert.match(source, /chapter-workspace/);
   assert.match(source, /chapterMode/);
-  assert.match(source, /import-button/);
   assert.match(source, /reset/);
 });
 
