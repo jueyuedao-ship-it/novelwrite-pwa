@@ -96,6 +96,25 @@ test('series archive output contains only manifest and declared nested work zips
   assert.equal((await blobBytes(blob)).length > 0, true);
 });
 
+test('series archive imports a valid multi-work export into validated work packages', async () => {
+  const seriesArchive = require('../series-archive.js');
+  const series = { id: 'series-restore', title: '復元シリーズ', summary: 'バックアップ' };
+  const workB = packageWithId('work-b', '第二作');
+  const workA = packageWithId('work-a', '第一作');
+  const blob = await seriesArchive.exportSeriesArchive({
+    series,
+    activeWorkId: 'work-b',
+    works: [workB, workA]
+  });
+
+  const restored = await seriesArchive.importSeriesArchive(blob);
+
+  assert.deepEqual(restored.series, series);
+  assert.equal(restored.activeWorkId, 'work-b');
+  assert.deepEqual(restored.works.map(item => item.work.id), ['work-a', 'work-b']);
+  assert.deepEqual(restored.works.map(item => item.work.title), ['第一作', '第二作']);
+});
+
 test('browser series archive adapter lazy-loads its dependencies', () => {
   const fs = require('node:fs');
   const source = fs.readFileSync(require.resolve('../series-archive.js'), 'utf8');
