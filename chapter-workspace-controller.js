@@ -250,6 +250,7 @@
         const text = chapterMode ? 'マスター作品ZIPを開く' : 'シリーズを切り替える';
         if (importButton.textContent !== text) importButton.textContent = text;
       }
+      const seriesImportButton = $('import-series-button'); if (seriesImportButton) seriesImportButton.disabled = chapterMode;
       const reset = $('reset'); if (reset) reset.disabled = chapterMode;
       const sample = $('load-sample'); if (sample) sample.disabled = chapterMode;
       const exportButton = $('export-archive'); if (exportButton) exportButton.firstChild.textContent = chapterMode ? '章ZIPで保存 ' : 'シリーズZIPで保存 ';

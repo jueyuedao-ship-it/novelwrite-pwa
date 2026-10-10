@@ -30,11 +30,13 @@
         <span class="local-badge"><i></i> 端末内で保存</span>
         <span id="save-status" role="status" aria-live="polite">起動しています…</span>
         <button id="import-button" type="button">作品ZIPを開く</button>
+        <button id="import-series-button" type="button">シリーズZIPを開く</button>
         <button id="import-chapter-button" type="button">章ZIPを開く</button>
         <button id="export-archive" type="button" class="primary">シリーズZIPで保存 <span aria-hidden="true">↗</span></button>
         <button id="reset" type="button" class="quiet">新しいシリーズ</button>
       </div>
       <input id="import-file" type="file" accept=".json,application/json,.zip,application/zip" hidden>
+      <input id="import-series-file" type="file" accept=".zip,application/zip" hidden>
       <input id="import-chapter-file" type="file" accept=".zip,application/zip" hidden>
     </header>
     <div id="workspace-mode-strip" class="workspace-mode-strip" role="status" hidden></div>

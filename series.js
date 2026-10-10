@@ -132,6 +132,27 @@
     return seriesArchivePromise;
   }
 
+  async function importSeries(file) {
+    if (!file) return false;
+    return withSeriesOperation(async () => {
+      await assertFullWorkMode();
+      await waitForEditorIdle();
+      const store = await seriesDb();
+      const archive = await loadSeriesArchiveModule();
+      const restoreValue = await archive.importSeriesArchive(file);
+      const inspection = await root.NovelStorage.inspectSeriesRestore(store, restoreValue);
+      if (inspection.mode === 'replace') {
+        const title = restoreValue.series.title || 'このシリーズ';
+        const confirmed = root.confirm(`「${title}」をシリーズZIPの内容で置き換えます。\n端末内のこのシリーズにある全作品はバックアップ内容で置き換わります。\nこの操作は元に戻せません。`);
+        if (!confirmed) return false;
+      }
+      await root.NovelStorage.restoreSeries(store, restoreValue, inspection);
+      toast(`「${restoreValue.series.title || 'シリーズ'}」を復元しました。`);
+      location.reload();
+      return true;
+    });
+  }
+
   async function exportSeries() {
     await withSeriesOperation(async () => {
       await assertFullWorkMode();
@@ -285,6 +306,7 @@
 
   function setTopbarLabels() {
     const importButton = $('import-button');
+    const seriesImportButton = $('import-series-button');
     const resetButton = $('reset');
     const exportButton = $('export-archive');
 
@@ -292,6 +314,7 @@
       importButton.textContent = chapterMode ? 'マスター作品ZIPを開く' : '作品ZIPを開く';
       importButton.disabled = false;
     }
+    if (seriesImportButton) seriesImportButton.disabled = chapterMode;
     if (resetButton) {
       resetButton.textContent = '新しいシリーズ';
       resetButton.disabled = chapterMode;
@@ -345,6 +368,17 @@
   ensureWorkArchiveControls();
   interceptTopbar();
   setTopbarLabels();
+  $('import-series-button')?.addEventListener('click', () => {
+    if (chapterMode || seriesOperation) return;
+    $('import-series-file')?.click();
+  });
+  $('import-series-file')?.addEventListener('change', () => {
+    const input = $('import-series-file');
+    const file = input?.files?.[0];
+    if (input) input.value = '';
+    if (!file) return;
+    void importSeries(file).catch(error => toast(`シリーズZIPを取り込めませんでした：${error?.message || error}`));
+  });
   $('tab-plot')?.addEventListener('click', renderIfPlotActive);
   $('series-title')?.addEventListener('input', scheduleSeriesSave);
   $('series-summary')?.addEventListener('input', scheduleSeriesSave);
