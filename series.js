@@ -49,7 +49,7 @@
 
   async function assertFullWorkMode() {
     if (await refreshChapterMode()) {
-      throw new Error('章ワークスペース中はシリーズや作品を変更できません。先にマスター作品ZIPを開いて通常モードへ戻してください。');
+      throw new Error('章ワークスペース中はシリーズや作品を切り替えられません。先にマスター作品ZIPを開いて通常モードへ戻してください。');
     }
   }
 
