@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'fumizukue-series-chapter-v8';
+const CACHE_NAME = 'fumizukue-series-chapter-v9';
 const SCOPE = self.registration.scope;
 const SCOPE_URL = new URL(SCOPE);
 const shellUrl = path => new URL(path, SCOPE).href;
@@ -19,6 +19,7 @@ const APP_SHELL = [
   './workspace-mode.js',
   './storage.js',
   './series-storage.js',
+  './series-ordering.js',
   './series-schema.js',
   './workspace-storage.js',
   './images.js',

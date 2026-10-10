@@ -9,6 +9,7 @@ const NovelPackage = require('../package');
 const baseStorage = require('../storage');
 const workspaceMode = require('../workspace-mode');
 const { createSeriesStorage } = require('../series-storage');
+const { createSeriesOrderingStorage } = require('../series-ordering');
 
 const read = file => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
 const dbName = label => `fumizukue-series-chapter-${label}-${Date.now()}-${Math.random()}`;
@@ -56,7 +57,7 @@ async function seedChapterWorkspaceV5(name) {
 }
 
 function composedStorage() {
-  const series = createSeriesStorage({ baseStorage, packageTools: NovelPackage, indexedDB });
+  const series = createSeriesOrderingStorage(createSeriesStorage({ baseStorage, packageTools: NovelPackage, indexedDB }));
   const context = {
     NovelStorage: series,
     NovelWorkspaceMode: workspaceMode,
@@ -95,6 +96,8 @@ test('existing v5 chapter workspace upgrades to v6 while preserving both metadat
     const works = await api.listWorks(db, seriesMeta.activeSeriesId);
     assert.equal(works.length, 1);
     assert.equal(works[0].id, work.id);
+    assert.equal(works[0].order, 0);
+    assert.equal(typeof api.moveWork, 'function');
     assert.equal((await api.loadWork(db)).work.id, work.id);
     assert.equal(await api.loadWorkRevision(db), 1);
 
@@ -111,14 +114,15 @@ test('existing v5 chapter workspace upgrades to v6 while preserving both metadat
   }
 });
 
-test('script order composes Series storage before chapter-workspace storage and both before app boot', () => {
+test('script order composes Series ordering before chapter-workspace storage and app boot', () => {
   const html = read('index.html');
   const storage = html.indexOf('<script src="./storage.js"></script>');
   const series = html.indexOf('<script src="./series-storage.js"></script>');
+  const ordering = html.indexOf('<script src="./series-ordering.js"></script>');
   const schema = html.indexOf('<script src="./series-schema.js"></script>');
   const chapterStorage = html.indexOf('<script src="./workspace-storage.js"></script>');
   const app = html.indexOf('<script src="./app.js"></script>');
-  assert.ok(storage < series && series < schema && schema < chapterStorage && chapterStorage < app);
+  assert.ok(storage < series && series < ordering && ordering < schema && schema < chapterStorage && chapterStorage < app);
 });
 
 test('series UI blocks work switching while chapter-workspace metadata is active', () => {

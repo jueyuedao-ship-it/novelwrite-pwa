@@ -39,14 +39,13 @@
   function normalizeWorks(works) {
     if (!Array.isArray(works) || works.length === 0) throw new Error('シリーズに保存する作品がありません。');
     const ids = new Set();
-    const normalized = works.map(item => {
+    return works.map(item => {
       const id = item?.work?.id;
       if (typeof id !== 'string' || !id) throw new Error('シリーズ内の作品IDが不正です。');
       if (ids.has(id)) throw new Error('シリーズ内に同じ作品IDが重複しています。');
       ids.add(id);
       return item;
     });
-    return normalized.sort((left, right) => String(left.work.id).localeCompare(String(right.work.id)));
   }
 
   async function exportSeriesArchive({ series, activeWorkId, works } = {}) {

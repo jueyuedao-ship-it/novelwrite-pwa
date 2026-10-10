@@ -21,7 +21,7 @@ async function blobBytes(blob) {
   return new Uint8Array(await blob.arrayBuffer());
 }
 
-test('series archive wraps id-sorted valid work archives with hashes and active work metadata', async () => {
+test('series archive preserves supplied work order with hashes and active work metadata', async () => {
   const seriesArchive = require('../series-archive.js');
   const workZ = packageWithId('work-z', '終章');
   const workA = packageWithId('work-a', '第一作');
@@ -38,7 +38,7 @@ test('series archive wraps id-sorted valid work archives with hashes and active 
   assert.equal(read.manifest.formatVersion, 1);
   assert.deepEqual(read.manifest.series, series);
   assert.equal(read.manifest.activeWorkId, 'work-z');
-  assert.deepEqual(read.manifest.works.map(item => item.id), ['work-a', 'work-z']);
+  assert.deepEqual(read.manifest.works.map(item => item.id), ['work-z', 'work-a']);
   assert.deepEqual(read.manifest.works.map(item => item.path), ['works/0001.zip', 'works/0002.zip']);
 
   for (const item of read.manifest.works) {
