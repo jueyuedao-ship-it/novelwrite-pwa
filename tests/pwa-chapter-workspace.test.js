@@ -6,7 +6,7 @@ const read = name => fs.readFileSync(path.join(__dirname, '..', name), 'utf8');
 
 test('service worker caches every chapter and series workspace runtime asset under the combined cache version', () => {
   const sw = read('sw.js');
-  assert.match(sw, /fumizukue-series-chapter-v7/);
+  assert.match(sw, /fumizukue-series-chapter-v8/);
   for (const asset of [
     'chapter-workspace.css', 'workspace-mode.js', 'workspace-storage.js', 'archive-common.js',
     'chapter-bundle.js', 'chapter-archive.js', 'chapter-workspace-controller.js',
