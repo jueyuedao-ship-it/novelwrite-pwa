@@ -1,0 +1,31 @@
+name: agent-probe-main-merge
+
+on:
+  push:
+    branches:
+      - feat/series-archive-restore
+    paths:
+      - .github/workflows/agent-probe-main-merge.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Probe merge with latest main
+        run: |
+          git fetch origin main
+          set +e
+          git merge --no-commit --no-ff origin/main
+          status=$?
+          echo "merge_status=$status"
+          echo "--- unmerged files ---"
+          git diff --name-only --diff-filter=U
+          echo "--- status ---"
+          git status --short
+          exit $status
