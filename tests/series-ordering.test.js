@@ -7,6 +7,7 @@ const NovelModel = require('../model');
 const NovelPackage = require('../package');
 const baseStorage = require('../storage');
 const { createSeriesStorage } = require('../series-storage');
+const { createSeriesOrderingStorage } = require('../series-ordering');
 const common = require('../archive-common');
 
 const dbName = label => `fumizukue-series-order-${label}-${Date.now()}-${Math.random()}`;
@@ -22,7 +23,7 @@ async function legacyDatabase(name, title = '作品A') {
 }
 
 function storage() {
-  return createSeriesStorage({ baseStorage, packageTools: NovelPackage, indexedDB });
+  return createSeriesOrderingStorage(createSeriesStorage({ baseStorage, packageTools: NovelPackage, indexedDB }));
 }
 
 function packageWithId(id, title) {
