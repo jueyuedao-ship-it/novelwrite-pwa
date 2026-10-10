@@ -16,6 +16,7 @@ jobs:
       - run: npm install --ignore-scripts
       - run: npm test
       - run: node --check series-storage.js
+      - run: node --check series-ordering.js
       - run: node --check series-schema.js
       - run: node --check workspace-storage.js
       - run: node --check series.js
