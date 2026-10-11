@@ -47,7 +47,7 @@ async function startController(workspaceMeta) {
   main.dataset.ready = 'true';
   const workOption = makeElement('作品全体');
   const strip = makeElement();
-  const importButton = makeElement('シリーズを切り替える');
+  const importButton = makeElement('作品ZIPを開く');
   const tabPlot = makeElement();
   const tabCharacters = makeElement();
   const textNode = { textContent: 'ZIPで保存 ' };
@@ -132,7 +132,7 @@ test('full-work startup child-list observer settles after applying the UI', asyn
   assert.equal(fullWork.context.NovelChapterWorkspace.getWorkspaceMeta(), null);
   assert.ok(fullWork.deliveries <= 1, `full-work observer fired ${fullWork.deliveries} times`);
   assert.equal(fullWork.workOption.textContent, '作品全体');
-  assert.equal(fullWork.importButton.textContent, 'シリーズを切り替える');
+  assert.equal(fullWork.importButton.textContent, '作品ZIPを開く');
 });
 
 test('chapter-workspace startup child-list observer settles after applying the UI', async () => {
