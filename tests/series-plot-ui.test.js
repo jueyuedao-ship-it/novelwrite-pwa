@@ -39,9 +39,9 @@ test('series controller behaves as a plot widget instead of owning screen naviga
   assert.match(source, /render/);
 });
 
-test('service worker cache generation changes so installed PWAs receive series ordering UI', () => {
+test('service worker cache generation includes series ordering and archive restore UI', () => {
   const sw = read('sw.js');
-  assert.match(sw, /fumizukue-series-chapter-v9/);
+  assert.match(sw, /fumizukue-series-chapter-v10/);
   assert.match(sw, /series-ordering\.js/);
   assert.match(sw, /series-archive\.js/);
 });
