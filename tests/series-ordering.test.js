@@ -151,5 +151,5 @@ test('series plot UI exposes work move controls and the PWA cache generation is 
   assert.match(source, /moveWork/);
   assert.match(source, /作品を上へ/);
   assert.match(source, /作品を下へ/);
-  assert.match(sw, /fumizukue-series-chapter-v9/);
+  assert.match(sw, /fumizukue-series-chapter-v10/);
 });
