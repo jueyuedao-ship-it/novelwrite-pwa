@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'fumizukue-series-chapter-v9';
+const CACHE_NAME = 'fumizukue-series-chapter-v10';
 const SCOPE = self.registration.scope;
 const SCOPE_URL = new URL(SCOPE);
 const shellUrl = path => new URL(path, SCOPE).href;
