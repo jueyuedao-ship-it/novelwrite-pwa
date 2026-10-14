@@ -308,7 +308,9 @@
     }
 
     async function removeImage(scene, imageId) {
-      const state = getState(), current = sceneAt(scene.id) || scene, workId = state.work.id;
+      const finishOperation = workspace.beginOperation();
+      try {
+        const state = getState(), current = sceneAt(scene.id) || scene, workId = state.work.id;
       let ownerImages;
       try {
         ownerImages = await Promise.all(current.imageIds.map(async id => {
@@ -329,11 +331,16 @@
       commitPatch(patch); loadedImages.delete(imageId);
       images.forEach(image => loadedImages.set(image.id, image));
       const url = imageUrls.get(imageId); if (url) URL.revokeObjectURL(url); imageUrls.delete(imageId);
-      await render();
+        await render();
+      } finally {
+        finishOperation();
+      }
     }
 
     async function moveSelectedScene(destination) {
-      const scope = activeScope(), source = await ensureBucket(scope), scene = source.find(item => item.id === selectedSceneId);
+      const finishOperation = workspace.beginOperation();
+      try {
+        const scope = activeScope(), source = await ensureBucket(scope), scene = source.find(item => item.id === selectedSceneId);
       if (!scene) return;
       const state = getState();
       if (destination.episodeId) {
@@ -352,7 +359,10 @@
       if (destination.episodeId) await workspace.selectEpisode(destination.episodeId);
       if (destination.episodeId) selectedEpisodeId = destination.episodeId;
       selectedSceneId = scene.id; scenePage = 0; imageOpen = false; revokeImages();
-      await render();
+        await render();
+      } finally {
+        finishOperation();
+      }
     }
 
     async function render() {
@@ -472,7 +482,9 @@
           const snapshot = getState(), meta = snapshot.episodeMetas.find(item => item.id === activeEpisodeMeta.id);
           if (!meta || meta.chapterId === chapterId) return;
           void (async () => {
-            const sourceMetas = sortedEpisodes(snapshot, meta.chapterId).filter(item => item.id !== meta.id);
+            const finishOperation = workspace.beginOperation();
+            try {
+              const sourceMetas = sortedEpisodes(snapshot, meta.chapterId).filter(item => item.id !== meta.id);
             const destinationMetas = sortedEpisodes(snapshot, chapterId);
             const beforeBodies = await loadEpisodeBodies([meta, ...sourceMetas, ...destinationMetas], snapshot);
             if (getState().work.id !== snapshot.work.id) return;
@@ -493,7 +505,10 @@
               episodes: { upsert: [...sourceUpdates, ...destinationUpdates, changedMeta], deleteIds: [] },
               scenes: { upsert: changedScenes, deleteIds: [] }
             });
-            selectedChapterId = chapterId; mode = 'episode'; void render();
+              selectedChapterId = chapterId; mode = 'episode'; void render();
+            } finally {
+              finishOperation();
+            }
           })().catch(error => workspace.toast(`話を移動できませんでした：${error.message}`));
         });
         episodePanel.append(title.label, chapterSelect.label);
@@ -503,12 +518,17 @@
       const scenesPanel = node('section', 'plot-scene-panel');
       const sceneHeading = node('div', 'plot-section-heading'); sceneHeading.append(node('h2', '', 'シーン'));
       sceneHeading.append(makeButton('＋ シーン', async () => {
-        const latest = getState(), scopeNow = activeScope(), items = await ensureBucket(scopeNow);
+        const finishOperation = workspace.beginOperation();
+        try {
+          const latest = getState(), scopeNow = activeScope(), items = await ensureBucket(scopeNow);
         const scene = createScene(latest.work.id, scopeNow, items.length);
         selectedSceneId = scene.id; scenePage = Math.floor(items.length / pageSize); imageOpen = false;
-        buckets.set(keyForScope(scopeNow), [...items, scene]);
-        commitPatch({ workId: latest.work.id, scenes: { upsert: [scene], deleteIds: [] } });
-        await render();
+          buckets.set(keyForScope(scopeNow), [...items, scene]);
+          commitPatch({ workId: latest.work.id, scenes: { upsert: [scene], deleteIds: [] } });
+          await render();
+        } finally {
+          finishOperation();
+        }
       }, 'accent'));
       const visibleChapterOptions = chapters.slice(chapterPage * pageSize, (chapterPage + 1) * pageSize);
       if (selectedChapterId && !visibleChapterOptions.some(chapter => chapter.id === selectedChapterId)) visibleChapterOptions.push(chapters.find(chapter => chapter.id === selectedChapterId));

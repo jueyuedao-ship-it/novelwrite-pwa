@@ -277,7 +277,9 @@
     }
 
     async function removeImage(character, imageId) {
-      const latest = getState(), current = latest.characters.find(item => item.id === character.id), workId = latest.work.id;
+      const finishOperation = workspace.beginOperation();
+      try {
+        const latest = getState(), current = latest.characters.find(item => item.id === character.id), workId = latest.work.id;
       if (!current) return;
       let ownerImages;
       try {
@@ -298,7 +300,10 @@
       loadedImages.delete(imageId);
       images.forEach(image => loadedImages.set(image.id, image));
       const url = imageUrls.get(imageId); if (url) URL.revokeObjectURL(url); imageUrls.delete(imageId);
-      await render();
+        await render();
+      } finally {
+        finishOperation();
+      }
     }
 
     async function openCharacter(characterId) {

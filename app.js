@@ -681,7 +681,9 @@
     if (busy) return;
     const yes = await choose('シーン説明を削除', 'このシーン説明と参考画像を削除します。「元に戻す」で復元できます。', [{ label: '取消', value: false }, { label: '削除', value: true, className: 'danger' }]);
     if (!yes) return;
-    const initial = currentState(), episodeId = selectedEpisodeId, workId = initial.work.id;
+    const finishOperation = beginOperation();
+    try {
+      const initial = currentState(), episodeId = selectedEpisodeId, workId = initial.work.id;
     const initialScene = scenesForEpisode(initial, episodeId).find(item => item.id === sceneId); if (!initialScene) return;
     let imageRecords;
     try {
@@ -703,7 +705,10 @@
       scenes: { upsert: remaining, deleteIds: [sceneId] },
       images: { upsert: [], deleteIds: scene.imageIds }
     });
-    syncImageUrls();
+      syncImageUrls();
+    } finally {
+      finishOperation();
+    }
   }
   function renderScenes(episode, force) {
     const scenes = episode.scenes, alive = new Set(scenes.map(scene => scene.id));
