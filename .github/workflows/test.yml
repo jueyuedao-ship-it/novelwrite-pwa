@@ -5,9 +5,6 @@ on:
     branches: ['**']
   pull_request:
 
-permissions:
-  contents: write
-
 jobs:
   node-test:
     runs-on: ubuntu-latest
@@ -17,9 +14,6 @@ jobs:
         with:
           node-version: '22'
       - run: npm install --ignore-scripts
-      - name: Apply series export flush fix
-        if: github.ref == 'refs/heads/fix/series-export-flush-barrier'
-        run: node scripts/apply-series-export-flush-fix.cjs
       - run: npm test
       - run: node --check series-storage.js
       - run: node --check series-ordering.js
@@ -31,15 +25,3 @@ jobs:
       - run: node --check app.js
       - run: node --check chapter-workspace-controller.js
       - run: node --check workspace-loader.js
-      - name: Commit verified source changes
-        if: github.ref == 'refs/heads/fix/series-export-flush-barrier'
-        run: |
-          if git diff --quiet -- app.js series.js characters.js plot.js; then
-            echo 'No source changes to commit.'
-            exit 0
-          fi
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add app.js series.js characters.js plot.js
-          git commit -m 'fix: flush pending state before series export'
-          git push
