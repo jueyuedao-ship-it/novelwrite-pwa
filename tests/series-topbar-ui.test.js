@@ -73,6 +73,18 @@ test('asynchronous character rename and episode reordering register workspace op
   assert.match(plot, /async function moveEpisode\([\s\S]*workspace\.beginOperation\(\)[\s\S]*loadEpisodeBodies/);
 });
 
+test('all asynchronous mutations that can commit after loading data register archive operations', () => {
+  const app = read('app.js');
+  const characters = read('characters.js');
+  const plot = read('plot.js');
+  assert.match(app, /async function deleteScene\(sceneId\)[\s\S]*const finishOperation = beginOperation\(\);[\s\S]*Promise\.all/);
+  assert.match(characters, /async function removeImage\(character, imageId\) \{\s*const finishOperation = workspace\.beginOperation\(\);/);
+  assert.match(plot, /async function removeImage\(scene, imageId\) \{\s*const finishOperation = workspace\.beginOperation\(\);/);
+  assert.match(plot, /async function moveSelectedScene\(destination\) \{\s*const finishOperation = workspace\.beginOperation\(\);/);
+  assert.match(plot, /const chapterSelect = addSelect\(['"]話の章['"][\s\S]*void \(async \(\) => \{\s*const finishOperation = workspace\.beginOperation\(\);/);
+  assert.match(plot, /makeButton\(['"]＋ シーン['"], async \(\) => \{\s*const finishOperation = workspace\.beginOperation\(\);/);
+});
+
 test('chapter workspace leaves chapter ZIP export interception available while blocking series controls', () => {
   const source = read('series.js');
   assert.match(source, /chapter-workspace/);
