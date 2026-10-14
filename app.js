@@ -27,7 +27,7 @@
   let selectedEpisodeId = history.present.activeEpisodeId;
   let activeScreen = 'manuscript', activeScene = null;
   let range = [history.present.episodesById[selectedEpisodeId].lines[0].id, history.present.episodesById[selectedEpisodeId].lines[0].id];
-  let composingElement = null, busy = false, pendingImageLoads = 0;
+  let composingElement = null, busy = false, pendingImageLoads = 0, pendingOperations = 0;
   let episodeLoadGeneration = 0;
   let saveRevision = 1, savedRevision = 0, saveTimer = null, saveInFlight = false, savePromise = null, activeChanges = null, replacingPackage = false, saveError = '';
   let pendingChanges = null, toastTimer = null, backupTimestamp = '';
@@ -109,11 +109,25 @@
     if (dbError) { status.textContent = `保存先を利用できません：${dbError}`; status.classList.add('save-error'); }
     else if (saveError) { status.textContent = `保存できません：${saveError}`; status.classList.add('save-error'); }
     else if (saveInFlight) { status.textContent = '保存中…'; status.classList.add('save-pending'); }
+    else if (pendingOperations || pendingImageLoads) { status.textContent = '処理中…'; status.classList.add('save-pending'); }
     else if (saveTimer) { status.textContent = '保存待ち…'; status.classList.add('save-pending'); }
     else if (savedRevision >= saveRevision) { status.textContent = backupTimestamp ? `保存済み · ${backupTimestamp}` : '保存済み'; status.classList.add('save-success'); }
     else { status.textContent = '未保存の変更あり'; status.classList.add('save-pending'); }
   }
+  function beginOperation() {
+    pendingOperations++;
+    paintSaveStatus();
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      pendingOperations--;
+      if (pendingChanges && !saveError) scheduleSave(0);
+      paintSaveStatus();
+    };
+  }
   function beginImageLoad() {
+    const finishOperation = beginOperation();
     pendingImageLoads++;
     paintSaveStatus();
     let released = false;
@@ -121,8 +135,7 @@
       if (released) return;
       released = true;
       pendingImageLoads--;
-      if (pendingChanges && !saveError) scheduleSave(0);
-      paintSaveStatus();
+      finishOperation();
     };
   }
   function scheduleSave(delay = 350) {
@@ -668,29 +681,34 @@
     if (busy) return;
     const yes = await choose('シーン説明を削除', 'このシーン説明と参考画像を削除します。「元に戻す」で復元できます。', [{ label: '取消', value: false }, { label: '削除', value: true, className: 'danger' }]);
     if (!yes) return;
-    const initial = currentState(), episodeId = selectedEpisodeId, workId = initial.work.id;
-    const initialScene = scenesForEpisode(initial, episodeId).find(item => item.id === sceneId); if (!initialScene) return;
-    let imageRecords;
+    const finishOperation = beginOperation();
     try {
-      imageRecords = await Promise.all(initialScene.imageIds.map(id => {
-        const loaded = initial.imagesById[id];
-        return loaded?.blob ? loaded : NovelStorage.loadImage(db, id);
-      }));
-      if (imageRecords.some(image => !image?.blob)) throw new Error('画像本体が保存先に見つかりません。');
-    } catch (error) { toast(`シーンを削除できませんでした：${error.message}`); return; }
-    if (currentState().work.id !== workId || selectedEpisodeId !== episodeId) return;
-    history.present = E.applyPatch(currentState(), { workId, images: { upsert: imageRecords, deleteIds: [] } });
-    const state = currentState(), scenes = scenesForEpisode(state, episodeId);
-    const scene = scenes.find(item => item.id === sceneId); if (!scene) return;
-    const remaining = scenes.filter(item => item.id !== sceneId).slice().sort((left, right) => left.order - right.order).map((item, order) => ({ ...item, order }));
-    const imagesById = { ...state.imagesById }; scene.imageIds.forEach(id => delete imagesById[id]);
-    const next = { ...state, scenesByEpisodeId: { ...state.scenesByEpisodeId, [episodeSceneKey(episodeId)]: remaining }, imagesById };
-    changed(next, null, {
-      workId,
-      scenes: { upsert: remaining, deleteIds: [sceneId] },
-      images: { upsert: [], deleteIds: scene.imageIds }
-    });
-    syncImageUrls();
+      const initial = currentState(), episodeId = selectedEpisodeId, workId = initial.work.id;
+      const initialScene = scenesForEpisode(initial, episodeId).find(item => item.id === sceneId); if (!initialScene) return;
+      let imageRecords;
+      try {
+        imageRecords = await Promise.all(initialScene.imageIds.map(id => {
+          const loaded = initial.imagesById[id];
+          return loaded?.blob ? loaded : NovelStorage.loadImage(db, id);
+        }));
+        if (imageRecords.some(image => !image?.blob)) throw new Error('画像本体が保存先に見つかりません。');
+      } catch (error) { toast(`シーンを削除できませんでした：${error.message}`); return; }
+      if (currentState().work.id !== workId || selectedEpisodeId !== episodeId) return;
+      history.present = E.applyPatch(currentState(), { workId, images: { upsert: imageRecords, deleteIds: [] } });
+      const state = currentState(), scenes = scenesForEpisode(state, episodeId);
+      const scene = scenes.find(item => item.id === sceneId); if (!scene) return;
+      const remaining = scenes.filter(item => item.id !== sceneId).slice().sort((left, right) => left.order - right.order).map((item, order) => ({ ...item, order }));
+      const imagesById = { ...state.imagesById }; scene.imageIds.forEach(id => delete imagesById[id]);
+      const next = { ...state, scenesByEpisodeId: { ...state.scenesByEpisodeId, [episodeSceneKey(episodeId)]: remaining }, imagesById };
+      changed(next, null, {
+        workId,
+        scenes: { upsert: remaining, deleteIds: [sceneId] },
+        images: { upsert: [], deleteIds: scene.imageIds }
+      });
+      syncImageUrls();
+    } finally {
+      finishOperation();
+    }
   }
   function renderScenes(episode, force) {
     const scenes = episode.scenes, alive = new Set(scenes.map(scene => scene.id));
@@ -919,16 +937,27 @@
     if (!window.NovelArchive) throw new Error('ZIP処理モジュールを読み込めませんでした。');
     return window.NovelArchive;
   }
-  async function flushPendingSave() {
-    clearTimeout(saveTimer); saveTimer = null;
-    if (pendingChanges && !saveInFlight && !composingElement && !pendingImageLoads && !saveError) void startPersistChanges();
+  async function flushForArchive() {
+    if (composingElement) throw new Error('文字入力の変換を確定してからZIPを保存してください。');
+    if (busy || replacingPackage) throw new Error('現在の操作が完了してからZIPを保存してください。');
     const start = Date.now();
-    while ((saveInFlight || pendingChanges || saveRevision > savedRevision) && Date.now() - start < 15000) {
+    while (Date.now() - start < 15000) {
       if (saveError) throw new Error(saveError);
-      if (pendingChanges && !saveInFlight && !savePromise && !composingElement && !pendingImageLoads) void startPersistChanges();
+      if (composingElement) throw new Error('文字入力の変換を確定してからZIPを保存してください。');
+      if (busy || replacingPackage) throw new Error('現在の操作が完了してからZIPを保存してください。');
+      if (!pendingOperations && !pendingImageLoads) {
+        clearTimeout(saveTimer);
+        saveTimer = null;
+        if (pendingChanges && !saveInFlight && !savePromise) void startPersistChanges();
+        if (!saveInFlight && !savePromise && !pendingChanges && saveRevision <= savedRevision) return;
+      }
       await new Promise(resolve => setTimeout(resolve, 30));
     }
-    if (saveRevision > savedRevision) throw new Error(saveError || '保存が完了していません。');
+    if (pendingOperations || pendingImageLoads) throw new Error('画像または編集中の処理が完了していません。');
+    throw new Error(saveError || '保存が完了していません。');
+  }
+  async function flushPendingSave() {
+    await flushForArchive();
   }
   function applyPatchToPackage(packageValue, patch) {
     if (!patch) return packageValue;
@@ -1048,7 +1077,7 @@
     else if (key === 's') { event.preventDefault(); void exportArchive(); }
   });
   window.addEventListener('beforeunload', event => {
-    if (saveRevision > savedRevision || composingElement || pendingImageLoads) { event.preventDefault(); event.returnValue = ''; }
+    if (saveRevision > savedRevision || composingElement || pendingImageLoads || pendingOperations) { event.preventDefault(); event.returnValue = ''; }
   });
   $('sidebar').id = 'sidebar';
   const requireStore = () => db ? db : Promise.reject(new Error('作品データベースの起動が完了していません。'));
@@ -1080,7 +1109,9 @@
     loadEpisode: id => db ? NovelStorage.loadEpisode(db, id) : requireStore(),
     loadScenes: scope => db ? NovelStorage.loadScenes(db, scope) : requireStore(),
     loadImage: id => db ? NovelStorage.loadImage(db, id) : requireStore(),
+    beginOperation,
     beginImageLoad,
+    flushForArchive,
     openPlotScene: scene => openExtensionReference('plot', 'openScene', scene),
     openCharacter: characterId => openExtensionReference('characters', 'openCharacter', characterId),
     subscribe: listener => {

@@ -159,6 +159,7 @@
         details.append(title);
         addField(details, '人物名', character.name, async name => {
           if (name === character.name) return;
+          const finishOperation = workspace.beginOperation();
           try {
             const snapshot = getState();
             const renamed = await renameCharacter(snapshot, character.id, name, id => workspace.loadEpisode(id));
@@ -179,6 +180,7 @@
             workspace.commit(editorState.applyPatch(latest, patch), patch, `character:${character.id}:name`);
             await render();
           } catch (error) { workspace.toast(`人物名を変更できませんでした：${error.message}`); await render(); }
+          finally { finishOperation(); }
         }, { commitOnChange: true });
         const commitField = key => value => {
           const latest = getState(), current = latest.characters.find(item => item.id === character.id);
@@ -275,28 +277,33 @@
     }
 
     async function removeImage(character, imageId) {
-      const latest = getState(), current = latest.characters.find(item => item.id === character.id), workId = latest.work.id;
-      if (!current) return;
-      let ownerImages;
+      const finishOperation = workspace.beginOperation();
       try {
-        ownerImages = await Promise.all(current.imageIds.map(async id => {
-          const image = loadedImages.get(id) || getState().imagesById[id];
-          return image?.blob ? image : workspace.loadImage(id);
-        }));
-        if (ownerImages.some(image => !image?.blob)) throw new Error('画像本体が保存先に見つかりません。');
-      } catch (error) { workspace.toast(`人物画像を削除できません：${error.message}`); return; }
-      if (getState().work.id !== workId) return;
-      workspace.hydrate({ workId, images: { upsert: ownerImages, deleteIds: [] } });
-      const updated = detachImage(getState().characters.find(item => item.id === character.id) || current, imageId);
-      const images = updated.imageIds.map((id, order) => {
-        const image = getState().imagesById[id];
-        return image.order === order ? image : { ...image, order };
-      });
-      commitPatch({ workId, characters: { upsert: [updated], deleteIds: [] }, images: { upsert: images, deleteIds: [imageId] } });
-      loadedImages.delete(imageId);
-      images.forEach(image => loadedImages.set(image.id, image));
-      const url = imageUrls.get(imageId); if (url) URL.revokeObjectURL(url); imageUrls.delete(imageId);
-      await render();
+        const latest = getState(), current = latest.characters.find(item => item.id === character.id), workId = latest.work.id;
+        if (!current) return;
+        let ownerImages;
+        try {
+          ownerImages = await Promise.all(current.imageIds.map(async id => {
+            const image = loadedImages.get(id) || getState().imagesById[id];
+            return image?.blob ? image : workspace.loadImage(id);
+          }));
+          if (ownerImages.some(image => !image?.blob)) throw new Error('画像本体が保存先に見つかりません。');
+        } catch (error) { workspace.toast(`人物画像を削除できません：${error.message}`); return; }
+        if (getState().work.id !== workId) return;
+        workspace.hydrate({ workId, images: { upsert: ownerImages, deleteIds: [] } });
+        const updated = detachImage(getState().characters.find(item => item.id === character.id) || current, imageId);
+        const images = updated.imageIds.map((id, order) => {
+          const image = getState().imagesById[id];
+          return image.order === order ? image : { ...image, order };
+        });
+        commitPatch({ workId, characters: { upsert: [updated], deleteIds: [] }, images: { upsert: images, deleteIds: [imageId] } });
+        loadedImages.delete(imageId);
+        images.forEach(image => loadedImages.set(image.id, image));
+        const url = imageUrls.get(imageId); if (url) URL.revokeObjectURL(url); imageUrls.delete(imageId);
+        await render();
+      } finally {
+        finishOperation();
+      }
     }
 
     async function openCharacter(characterId) {

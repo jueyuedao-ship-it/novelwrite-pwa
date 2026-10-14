@@ -7,6 +7,7 @@
   let activeSeries = null;
   let activeMeta = null;
   let saveTimer = null;
+  let seriesSavePromise = null;
   let chapterMode = false;
   let workExportBypass = false;
   let seriesArchivePromise = null;
@@ -164,7 +165,12 @@
   async function exportSeries() {
     await withSeriesOperation(async () => {
       await assertFullWorkMode();
-      await waitForEditorIdle();
+      await flushSeriesSave();
+      if (typeof root.NovelWorkspace?.flushForArchive === 'function') {
+        await root.NovelWorkspace.flushForArchive();
+      } else {
+        await waitForEditorIdle();
+      }
       const store = await seriesDb();
       const meta = await root.NovelStorage.getWorkspaceMeta(store);
       if (!meta) throw new Error('現在のシリーズがありません。');
@@ -322,16 +328,50 @@
     )));
   }
 
+  function currentSeriesFields() {
+    return {
+      title: $('series-title').value,
+      summary: $('series-summary').value
+    };
+  }
+
+  function startSeriesSave() {
+    if (seriesSavePromise) return seriesSavePromise;
+    if (!activeSeries || $('series-title').disabled) return Promise.resolve(activeSeries);
+    const seriesId = activeSeries.id;
+    const fields = currentSeriesFields();
+    const operation = seriesDb()
+      .then(store => root.NovelStorage.updateSeries(store, seriesId, fields))
+      .then(value => {
+        if (activeSeries?.id === seriesId) activeSeries = value;
+        return value;
+      });
+    const tracked = operation.finally(() => {
+      if (seriesSavePromise === tracked) seriesSavePromise = null;
+    });
+    seriesSavePromise = tracked;
+    return tracked;
+  }
+
+  async function flushSeriesSave() {
+    const deadline = Date.now() + 15000;
+    while (Date.now() < deadline) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+      if (seriesSavePromise) await seriesSavePromise;
+      if (!activeSeries || $('series-title').disabled) return;
+      const fields = currentSeriesFields();
+      if (activeSeries.title === fields.title && activeSeries.summary === fields.summary) return;
+      await startSeriesSave();
+    }
+    throw new Error('シリーズ設定の保存完了を確認できませんでした。');
+  }
+
   function scheduleSeriesSave() {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
-      if (!activeSeries || $('series-title').disabled) return;
-      void root.NovelStorage.updateSeries(db, activeSeries.id, {
-        title: $('series-title').value,
-        summary: $('series-summary').value
-      }).then(value => {
-        activeSeries = value;
-      }).catch(error => toast(error.message));
+      saveTimer = null;
+      void flushSeriesSave().catch(error => toast(error.message));
     }, 350);
   }
 
