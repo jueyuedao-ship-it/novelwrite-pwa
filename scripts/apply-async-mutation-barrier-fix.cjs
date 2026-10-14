@@ -55,6 +55,6 @@ transform('plot.js', [
 `      sceneHeading.append(makeButton('＋ シーン', async () => {\n        const latest = getState(), scopeNow = activeScope(), items = await ensureBucket(scopeNow);`,
 `      sceneHeading.append(makeButton('＋ シーン', async () => {\n        const finishOperation = workspace.beginOperation();\n        try {\n          const latest = getState(), scopeNow = activeScope(), items = await ensureBucket(scopeNow);`],
   ['scene add operation finish',
-`        await render();\n      }, 'accent'));`,
-`          await render();\n        } finally {\n          finishOperation();\n        }\n      }, 'accent'));`]
+`        buckets.set(keyForScope(scopeNow), [...items, scene]);\n        commitPatch({ workId: latest.work.id, scenes: { upsert: [scene], deleteIds: [] } });\n        await render();\n      }, 'accent'));`,
+`          buckets.set(keyForScope(scopeNow), [...items, scene]);\n          commitPatch({ workId: latest.work.id, scenes: { upsert: [scene], deleteIds: [] } });\n          await render();\n        } finally {\n          finishOperation();\n        }\n      }, 'accent'));`]
 ]);
