@@ -159,6 +159,7 @@
         details.append(title);
         addField(details, '人物名', character.name, async name => {
           if (name === character.name) return;
+          const finishOperation = workspace.beginOperation();
           try {
             const snapshot = getState();
             const renamed = await renameCharacter(snapshot, character.id, name, id => workspace.loadEpisode(id));
@@ -179,6 +180,7 @@
             workspace.commit(editorState.applyPatch(latest, patch), patch, `character:${character.id}:name`);
             await render();
           } catch (error) { workspace.toast(`人物名を変更できませんでした：${error.message}`); await render(); }
+          finally { finishOperation(); }
         }, { commitOnChange: true });
         const commitField = key => value => {
           const latest = getState(), current = latest.characters.find(item => item.id === character.id);

@@ -186,7 +186,9 @@
     async function moveEpisode(episodeId, delta) {
       const state = getState(), episodes = sortedEpisodes(state, selectedChapterId), index = episodes.findIndex(item => item.id === episodeId);
       const nextIndex = index + delta; if (index < 0 || nextIndex < 0 || nextIndex >= episodes.length) return;
-      const beforeRecords = await loadEpisodeBodies([episodes[index], episodes[nextIndex]], state);
+      const finishOperation = workspace.beginOperation();
+      try {
+        const beforeRecords = await loadEpisodeBodies([episodes[index], episodes[nextIndex]], state);
       if (getState().work.id !== state.work.id) return;
       const currentBeforeHydration = getState();
       const beforeCache = beforeRecords.filter(episode => !Array.isArray(currentBeforeHydration.episodesById[episode.id]?.lines));
@@ -195,8 +197,11 @@
       const records = beforeRecords.map(episode => ({ ...(latest.episodesById[episode.id] || episode) }));
       [records[0].order, records[1].order] = [records[1].order, records[0].order];
       const patch = { workId: latest.work.id, episodes: { upsert: records, deleteIds: [] } };
-      workspace.commit(editorState.applyPatch(latest, patch), patch, `plot:chapter:${selectedChapterId}:episodes:order`);
-      void render();
+        workspace.commit(editorState.applyPatch(latest, patch), patch, `plot:chapter:${selectedChapterId}:episodes:order`);
+        void render();
+      } finally {
+        finishOperation();
+      }
     }
 
     async function setScope(nextMode, episodeId = null, chapterId = null) {
