@@ -48,6 +48,31 @@ test('series export lazy-loads the series archive and fully loads every work bef
   assert.match(source, /\.series\.zip/);
 });
 
+test('series export flushes pending series fields and workspace operations before taking the database snapshot', () => {
+  const source = read('series.js');
+  assert.match(source, /async function flushSeriesSave\(\)/);
+  assert.match(
+    source,
+    /async function exportSeries\(\)[\s\S]*await flushSeriesSave\(\);[\s\S]*await root\.NovelWorkspace\.flushForArchive\(\);[\s\S]*getWorkspaceMeta\(store\)/
+  );
+});
+
+test('workspace exposes a state-based archive barrier for registered asynchronous operations', () => {
+  const source = read('app.js');
+  assert.match(source, /pendingOperations/);
+  assert.match(source, /function beginOperation\(\)/);
+  assert.match(source, /async function flushForArchive\(\)/);
+  assert.match(source, /beginOperation,/);
+  assert.match(source, /flushForArchive,/);
+});
+
+test('asynchronous character rename and episode reordering register workspace operations', () => {
+  const characters = read('characters.js');
+  const plot = read('plot.js');
+  assert.match(characters, /addField\(details, ['"]人物名['"][\s\S]*workspace\.beginOperation\(\)[\s\S]*renameCharacter/);
+  assert.match(plot, /async function moveEpisode\([\s\S]*workspace\.beginOperation\(\)[\s\S]*loadEpisodeBodies/);
+});
+
 test('chapter workspace leaves chapter ZIP export interception available while blocking series controls', () => {
   const source = read('series.js');
   assert.match(source, /chapter-workspace/);
