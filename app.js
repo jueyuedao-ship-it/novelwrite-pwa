@@ -684,27 +684,27 @@
     const finishOperation = beginOperation();
     try {
       const initial = currentState(), episodeId = selectedEpisodeId, workId = initial.work.id;
-    const initialScene = scenesForEpisode(initial, episodeId).find(item => item.id === sceneId); if (!initialScene) return;
-    let imageRecords;
-    try {
-      imageRecords = await Promise.all(initialScene.imageIds.map(id => {
-        const loaded = initial.imagesById[id];
-        return loaded?.blob ? loaded : NovelStorage.loadImage(db, id);
-      }));
-      if (imageRecords.some(image => !image?.blob)) throw new Error('画像本体が保存先に見つかりません。');
-    } catch (error) { toast(`シーンを削除できませんでした：${error.message}`); return; }
-    if (currentState().work.id !== workId || selectedEpisodeId !== episodeId) return;
-    history.present = E.applyPatch(currentState(), { workId, images: { upsert: imageRecords, deleteIds: [] } });
-    const state = currentState(), scenes = scenesForEpisode(state, episodeId);
-    const scene = scenes.find(item => item.id === sceneId); if (!scene) return;
-    const remaining = scenes.filter(item => item.id !== sceneId).slice().sort((left, right) => left.order - right.order).map((item, order) => ({ ...item, order }));
-    const imagesById = { ...state.imagesById }; scene.imageIds.forEach(id => delete imagesById[id]);
-    const next = { ...state, scenesByEpisodeId: { ...state.scenesByEpisodeId, [episodeSceneKey(episodeId)]: remaining }, imagesById };
-    changed(next, null, {
-      workId,
-      scenes: { upsert: remaining, deleteIds: [sceneId] },
-      images: { upsert: [], deleteIds: scene.imageIds }
-    });
+      const initialScene = scenesForEpisode(initial, episodeId).find(item => item.id === sceneId); if (!initialScene) return;
+      let imageRecords;
+      try {
+        imageRecords = await Promise.all(initialScene.imageIds.map(id => {
+          const loaded = initial.imagesById[id];
+          return loaded?.blob ? loaded : NovelStorage.loadImage(db, id);
+        }));
+        if (imageRecords.some(image => !image?.blob)) throw new Error('画像本体が保存先に見つかりません。');
+      } catch (error) { toast(`シーンを削除できませんでした：${error.message}`); return; }
+      if (currentState().work.id !== workId || selectedEpisodeId !== episodeId) return;
+      history.present = E.applyPatch(currentState(), { workId, images: { upsert: imageRecords, deleteIds: [] } });
+      const state = currentState(), scenes = scenesForEpisode(state, episodeId);
+      const scene = scenes.find(item => item.id === sceneId); if (!scene) return;
+      const remaining = scenes.filter(item => item.id !== sceneId).slice().sort((left, right) => left.order - right.order).map((item, order) => ({ ...item, order }));
+      const imagesById = { ...state.imagesById }; scene.imageIds.forEach(id => delete imagesById[id]);
+      const next = { ...state, scenesByEpisodeId: { ...state.scenesByEpisodeId, [episodeSceneKey(episodeId)]: remaining }, imagesById };
+      changed(next, null, {
+        workId,
+        scenes: { upsert: remaining, deleteIds: [sceneId] },
+        images: { upsert: [], deleteIds: scene.imageIds }
+      });
       syncImageUrls();
     } finally {
       finishOperation();

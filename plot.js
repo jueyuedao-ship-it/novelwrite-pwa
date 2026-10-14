@@ -189,14 +189,14 @@
       const finishOperation = workspace.beginOperation();
       try {
         const beforeRecords = await loadEpisodeBodies([episodes[index], episodes[nextIndex]], state);
-      if (getState().work.id !== state.work.id) return;
-      const currentBeforeHydration = getState();
-      const beforeCache = beforeRecords.filter(episode => !Array.isArray(currentBeforeHydration.episodesById[episode.id]?.lines));
-      workspace.hydrate({ workId: state.work.id, episodes: { upsert: beforeCache, deleteIds: [] } });
-      const latest = getState();
-      const records = beforeRecords.map(episode => ({ ...(latest.episodesById[episode.id] || episode) }));
-      [records[0].order, records[1].order] = [records[1].order, records[0].order];
-      const patch = { workId: latest.work.id, episodes: { upsert: records, deleteIds: [] } };
+        if (getState().work.id !== state.work.id) return;
+        const currentBeforeHydration = getState();
+        const beforeCache = beforeRecords.filter(episode => !Array.isArray(currentBeforeHydration.episodesById[episode.id]?.lines));
+        workspace.hydrate({ workId: state.work.id, episodes: { upsert: beforeCache, deleteIds: [] } });
+        const latest = getState();
+        const records = beforeRecords.map(episode => ({ ...(latest.episodesById[episode.id] || episode) }));
+        [records[0].order, records[1].order] = [records[1].order, records[0].order];
+        const patch = { workId: latest.work.id, episodes: { upsert: records, deleteIds: [] } };
         workspace.commit(editorState.applyPatch(latest, patch), patch, `plot:chapter:${selectedChapterId}:episodes:order`);
         void render();
       } finally {
@@ -311,26 +311,26 @@
       const finishOperation = workspace.beginOperation();
       try {
         const state = getState(), current = sceneAt(scene.id) || scene, workId = state.work.id;
-      let ownerImages;
-      try {
-        ownerImages = await Promise.all(current.imageIds.map(async id => {
-          const image = loadedImages.get(id) || getState().imagesById[id];
-          return image?.blob ? image : workspace.loadImage(id);
-        }));
-        if (ownerImages.some(image => !image?.blob)) throw new Error('画像本体が保存先に見つかりません。');
-      } catch (error) { workspace.toast(`シーン画像を削除できません：${error.message}`); return; }
-      if (getState().work.id !== workId) return;
-      workspace.hydrate({ workId, images: { upsert: ownerImages, deleteIds: [] } });
-      const latest = getState(), latestScene = sceneAt(scene.id) || current;
-      const updated = detachImage(latestScene, imageId);
-      const images = updated.imageIds.map((id, order) => {
-        const image = latest.imagesById[id];
-        return image.order === order ? image : { ...image, order };
-      });
-      const patch = { workId, scenes: { upsert: [updated], deleteIds: [] }, images: { upsert: images, deleteIds: [imageId] } };
-      commitPatch(patch); loadedImages.delete(imageId);
-      images.forEach(image => loadedImages.set(image.id, image));
-      const url = imageUrls.get(imageId); if (url) URL.revokeObjectURL(url); imageUrls.delete(imageId);
+        let ownerImages;
+        try {
+          ownerImages = await Promise.all(current.imageIds.map(async id => {
+            const image = loadedImages.get(id) || getState().imagesById[id];
+            return image?.blob ? image : workspace.loadImage(id);
+          }));
+          if (ownerImages.some(image => !image?.blob)) throw new Error('画像本体が保存先に見つかりません。');
+        } catch (error) { workspace.toast(`シーン画像を削除できません：${error.message}`); return; }
+        if (getState().work.id !== workId) return;
+        workspace.hydrate({ workId, images: { upsert: ownerImages, deleteIds: [] } });
+        const latest = getState(), latestScene = sceneAt(scene.id) || current;
+        const updated = detachImage(latestScene, imageId);
+        const images = updated.imageIds.map((id, order) => {
+          const image = latest.imagesById[id];
+          return image.order === order ? image : { ...image, order };
+        });
+        const patch = { workId, scenes: { upsert: [updated], deleteIds: [] }, images: { upsert: images, deleteIds: [imageId] } };
+        commitPatch(patch); loadedImages.delete(imageId);
+        images.forEach(image => loadedImages.set(image.id, image));
+        const url = imageUrls.get(imageId); if (url) URL.revokeObjectURL(url); imageUrls.delete(imageId);
         await render();
       } finally {
         finishOperation();
@@ -341,24 +341,24 @@
       const finishOperation = workspace.beginOperation();
       try {
         const scope = activeScope(), source = await ensureBucket(scope), scene = source.find(item => item.id === selectedSceneId);
-      if (!scene) return;
-      const state = getState();
-      if (destination.episodeId) {
-        const meta = state.episodeMetas.find(item => item.id === destination.episodeId);
-        if (!meta || meta.chapterId !== destination.chapterId) return;
-      }
-      if (scopeKey(destination) === scopeKey(scope)) return;
-      const target = await ensureBucket(destination);
-      const moved = moveBetweenScopes(source, target, scene.id, destination, target.length);
-      const upsert = [...moved.source, ...moved.destination];
-      const patch = { workId: state.work.id, scenes: { upsert, deleteIds: [] } };
-      commitPatch(patch);
-      buckets.set(keyForScope(scope), moved.source); buckets.set(keyForScope(destination), moved.destination);
-      mode = destination.episodeId ? 'episode' : destination.chapterId ? 'chapter' : 'unassigned';
-      selectedChapterId = destination.chapterId || selectedChapterId;
-      if (destination.episodeId) await workspace.selectEpisode(destination.episodeId);
-      if (destination.episodeId) selectedEpisodeId = destination.episodeId;
-      selectedSceneId = scene.id; scenePage = 0; imageOpen = false; revokeImages();
+        if (!scene) return;
+        const state = getState();
+        if (destination.episodeId) {
+          const meta = state.episodeMetas.find(item => item.id === destination.episodeId);
+          if (!meta || meta.chapterId !== destination.chapterId) return;
+        }
+        if (scopeKey(destination) === scopeKey(scope)) return;
+        const target = await ensureBucket(destination);
+        const moved = moveBetweenScopes(source, target, scene.id, destination, target.length);
+        const upsert = [...moved.source, ...moved.destination];
+        const patch = { workId: state.work.id, scenes: { upsert, deleteIds: [] } };
+        commitPatch(patch);
+        buckets.set(keyForScope(scope), moved.source); buckets.set(keyForScope(destination), moved.destination);
+        mode = destination.episodeId ? 'episode' : destination.chapterId ? 'chapter' : 'unassigned';
+        selectedChapterId = destination.chapterId || selectedChapterId;
+        if (destination.episodeId) await workspace.selectEpisode(destination.episodeId);
+        if (destination.episodeId) selectedEpisodeId = destination.episodeId;
+        selectedSceneId = scene.id; scenePage = 0; imageOpen = false; revokeImages();
         await render();
       } finally {
         finishOperation();
@@ -485,26 +485,26 @@
             const finishOperation = workspace.beginOperation();
             try {
               const sourceMetas = sortedEpisodes(snapshot, meta.chapterId).filter(item => item.id !== meta.id);
-            const destinationMetas = sortedEpisodes(snapshot, chapterId);
-            const beforeBodies = await loadEpisodeBodies([meta, ...sourceMetas, ...destinationMetas], snapshot);
-            if (getState().work.id !== snapshot.work.id) return;
-            const currentBeforeHydration = getState();
-            const uncached = beforeBodies.filter(episode => !Array.isArray(currentBeforeHydration.episodesById[episode.id]?.lines));
-            workspace.hydrate({ workId: snapshot.work.id, episodes: { upsert: uncached, deleteIds: [] } });
-            const hydratedState = getState();
-            const bodyFor = episode => hydratedState.episodesById[episode.id] || episode;
-            const movedBody = bodyFor(beforeBodies.find(episode => episode.id === meta.id));
-            const sourceUpdates = sourceMetas.map((item, order) => ({ ...bodyFor(beforeBodies.find(episode => episode.id === item.id)), order }));
-            const destinationUpdates = destinationMetas.map((item, order) => ({ ...bodyFor(beforeBodies.find(episode => episode.id === item.id)), order }));
-            const changedMeta = { ...movedBody, chapterId, order: destinationUpdates.length };
-            const loaded = await ensureBucket({ episodeId: meta.id, chapterId: meta.chapterId });
-            if (getState().work.id !== snapshot.work.id) return;
-            const changedScenes = loaded.map(scene => ({ ...scene, chapterId }));
-            commitPatch({
-              workId: snapshot.work.id,
-              episodes: { upsert: [...sourceUpdates, ...destinationUpdates, changedMeta], deleteIds: [] },
-              scenes: { upsert: changedScenes, deleteIds: [] }
-            });
+              const destinationMetas = sortedEpisodes(snapshot, chapterId);
+              const beforeBodies = await loadEpisodeBodies([meta, ...sourceMetas, ...destinationMetas], snapshot);
+              if (getState().work.id !== snapshot.work.id) return;
+              const currentBeforeHydration = getState();
+              const uncached = beforeBodies.filter(episode => !Array.isArray(currentBeforeHydration.episodesById[episode.id]?.lines));
+              workspace.hydrate({ workId: snapshot.work.id, episodes: { upsert: uncached, deleteIds: [] } });
+              const hydratedState = getState();
+              const bodyFor = episode => hydratedState.episodesById[episode.id] || episode;
+              const movedBody = bodyFor(beforeBodies.find(episode => episode.id === meta.id));
+              const sourceUpdates = sourceMetas.map((item, order) => ({ ...bodyFor(beforeBodies.find(episode => episode.id === item.id)), order }));
+              const destinationUpdates = destinationMetas.map((item, order) => ({ ...bodyFor(beforeBodies.find(episode => episode.id === item.id)), order }));
+              const changedMeta = { ...movedBody, chapterId, order: destinationUpdates.length };
+              const loaded = await ensureBucket({ episodeId: meta.id, chapterId: meta.chapterId });
+              if (getState().work.id !== snapshot.work.id) return;
+              const changedScenes = loaded.map(scene => ({ ...scene, chapterId }));
+              commitPatch({
+                workId: snapshot.work.id,
+                episodes: { upsert: [...sourceUpdates, ...destinationUpdates, changedMeta], deleteIds: [] },
+                scenes: { upsert: changedScenes, deleteIds: [] }
+              });
               selectedChapterId = chapterId; mode = 'episode'; void render();
             } finally {
               finishOperation();
@@ -521,8 +521,8 @@
         const finishOperation = workspace.beginOperation();
         try {
           const latest = getState(), scopeNow = activeScope(), items = await ensureBucket(scopeNow);
-        const scene = createScene(latest.work.id, scopeNow, items.length);
-        selectedSceneId = scene.id; scenePage = Math.floor(items.length / pageSize); imageOpen = false;
+          const scene = createScene(latest.work.id, scopeNow, items.length);
+          selectedSceneId = scene.id; scenePage = Math.floor(items.length / pageSize); imageOpen = false;
           buckets.set(keyForScope(scopeNow), [...items, scene]);
           commitPatch({ workId: latest.work.id, scenes: { upsert: [scene], deleteIds: [] } });
           await render();
